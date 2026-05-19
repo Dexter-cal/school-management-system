@@ -7,4 +7,5 @@ requests
 reportlab
 twilio
 python-decouple
+gunicorn
 qrcode # Added for QR code generation
