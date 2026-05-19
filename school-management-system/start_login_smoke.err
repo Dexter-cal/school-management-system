@@ -1,0 +1,21 @@
+WARNING: Failed to remove contents in a temporary directory 'C:\Users\n\AppData\Local\Temp\pip-build-tracker-vt74gn59'.
+You can safely remove it manually.
+WARNING: Failed to remove contents in a temporary directory 'C:\Users\n\AppData\Local\Temp\pip-unpack-30cy4_yz'.
+You can safely remove it manually.
+WARNING: Failed to remove contents in a temporary directory 'C:\Users\n\AppData\Local\Temp\pip-ephem-wheel-cache-74gp220y'.
+You can safely remove it manually.
+WARNING: Failed to remove contents in a temporary directory 'C:\Users\n\AppData\Local\Temp\pip-install-_07kcspv'.
+You can safely remove it manually.
+INFO Watching for file changes with StatReloader
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO "POST /api/auth/login/ HTTP/1.1" 200 461
+INFO "GET /api/auth/me/ HTTP/1.1" 200 431
+INFO "GET /api/api-credentials/health/ HTTP/1.1" 200 1583
+INFO "GET /api/notifications/?category=finance HTTP/1.1" 200 352
+INFO "GET /api/classes/ HTTP/1.1" 200 584
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO "POST /api/auth/login/ HTTP/1.1" 200 442
+INFO "GET /api/auth/me/ HTTP/1.1" 200 439
+INFO "GET /api/api-credentials/health/ HTTP/1.1" 200 1583
+INFO "GET /api/notifications/?category=finance HTTP/1.1" 200 2
+INFO "GET /api/classes/ HTTP/1.1" 200 584

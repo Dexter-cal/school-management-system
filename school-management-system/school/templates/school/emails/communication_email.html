@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }}</title>
+</head>
+<body>
+    <p>Dear {{ recipient_name|default:"Parent/Guardian" }},</p>
+    {% if body_html %}
+    <div>{{ body_html|safe }}</div>
+    {% else %}
+    <p>{{ body|linebreaksbr }}</p>
+    {% endif %}
+    {% if student_name %}
+    <p><b>Student:</b> {{ student_name }}{% if student_id %} ({{ student_id }}){% endif %}</p>
+    {% endif %}
+    {% if class_label %}
+    <p><b>Class:</b> {{ class_label }}</p>
+    {% endif %}
+    <p>Regards,</p>
+    <p>Bitende Junior School Administration</p>
+</body>
+</html>

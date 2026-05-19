@@ -1,0 +1,1016 @@
+﻿{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token }}">
+<title>Bitende Junior School - Management System</title>
+<link rel="icon" type="image/jpeg" href="{% static 'school/assets/logo.jpg' %}">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+   ROOT & RESET
+ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */
+:root {
+  --m: #7A0000; --ml: #A00000; --md: #4A0000; --mll: #F5ECEC;
+  --g: #F5C400; --gl: #FFE066; --gll: #FFF8DC;
+  --white: #fff; --f8: #F8F8F8; --f0: #F0F0F0;
+  --e: #E0E0E0; --99: #9E9E9E; --66: #616161; --1a: #1A1A1A;
+  --gr: #1B5E20; --grl: #E8F5E9;
+  --or: #E65100; --orl: #FFF3E0;
+  --rd: #B71C1C; --rdl: #FFEBEE;
+  --bl: #0D47A1; --bll: #E3F2FD;
+  --sb: 248px;
+  --sbm: 64px;
+  --tb: 58px;
+  --rad: 14px;
+  --shadow: 0 2px 12px rgba(0,0,0,0.07);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  --trans: all 0.22s cubic-bezier(.4,0,.2,1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-tap-highlight-color:transparent}
+body{font-family:'Outfit',sans-serif;background:var(--f8);color:var(--1a);font-size:14px;overflow-x:hidden}
+body[data-theme="dark"]{background:#0f1216;color:#f2f4f7}
+body[data-theme="dark"] .card{background:#161b22;border-color:#222a35}
+body[data-theme="dark"] .tbl th{color:#aab2bf}
+body[data-theme="dark"] .tbl td{border-bottom-color:#222a35}
+body[data-theme="dark"] .btn-ghost{background:#222a35;color:#c9d1d9}
+button,input,select,textarea{font-family:'Outfit',sans-serif}
+a{text-decoration:none;color:inherit}
+img{max-width:100%}
+
+.school-logo-img { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; }
+
+/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+   SPLASH SCREEN
+ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */
+#splash {
+  position:fixed;inset:0;z-index:99999;
+  background:linear-gradient(135deg,var(--md) 0%,var(--m) 50%,#9A1010 100%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:0;
+}
+.splash-logo-ring {
+  width:120px;height:120px;border-radius:50%;
+  background:rgba(255,255,255,0.1);
+  border:3px solid rgba(245,196,0,0.4);
+  display:flex;align-items:center;justify-content:center;
+  animation:splashPulse 2s ease-in-out infinite;
+  margin-bottom:24px;
+  overflow: hidden;
+}
+.splash-logo-inner {
+  width:100px;height:100px;border-radius:50%;
+  background:var(--g);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 8px 32px rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+.splash-name {
+  font-family:'Playfair Display',serif;font-size:28px;font-weight:900;
+  color:#fff;letter-spacing:0.02em;text-align:center;margin-bottom:6px;
+  animation:splashSlideUp 0.6s ease-out 0.2s both;
+}
+.splash-sub {
+  font-size:13px;color:rgba(255,255,255,0.55);letter-spacing:0.15em;
+  text-transform:uppercase;text-align:center;
+  animation:splashSlideUp 0.6s ease-out 0.4s both;
+}
+.splash-loader {
+  margin-top:48px;width:180px;height:3px;
+  background:rgba(255,255,255,0.15);border-radius:10px;overflow:hidden;
+  animation:splashSlideUp 0.6s ease-out 0.8s both;
+}
+.splash-loader-bar {
+  height:100%;background:var(--g);border-radius:10px;width:0%;
+  animation:splashLoad 1.8s ease-in-out 0.9s forwards;
+}
+@keyframes splashPulse{0%,100%{box-shadow:0 0 0 0 rgba(245,196,0,0.3)}50%{box-shadow:0 0 0 20px rgba(245,196,0,0)}}
+@keyframes splashSlideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes splashLoad{0%{width:0%}60%{width:75%}100%{width:100%}}
+#splash.fade-out{animation:splashFade 0.5s ease-out forwards}
+@keyframes splashFade{to{opacity:0;pointer-events:none}}
+
+/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+   LOGIN SCREEN
+ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */
+#login-screen {
+  position:fixed;inset:0;z-index:9999;
+  background:linear-gradient(135deg,var(--md) 0%,var(--m) 60%,#9A1010 100%);
+  /* Keep it in the layout so CSS fallbacks can reveal it even if JS init fails. */
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;
+  padding:20px;
+}
+#login-screen.show{opacity:1;pointer-events:auto}
+
+/* JS/CSS boot states */
+body[data-boot="login"] #login-screen{opacity:1;pointer-events:auto}
+body[data-boot="app"] #login-screen{display:none!important;opacity:0!important;pointer-events:none!important}
+body[data-boot="app"] #splash{display:none!important}
+
+/* Hard fallback if JS never runs: after 4s, hide splash and reveal login */
+body:not([data-boot]) #splash{animation:splashAutoHide 0.01s linear 4s forwards}
+body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forwards}
+@keyframes splashAutoHide{to{opacity:0;visibility:hidden;pointer-events:none}}
+@keyframes loginAutoShow{to{opacity:1;pointer-events:auto}}
+.login-card {
+  background:#fff;border-radius:24px;padding:40px 36px;
+  width:100%;max-width:420px;
+  box-shadow:0 24px 80px rgba(0,0,0,0.35);
+  animation:loginSlide 0.5s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes loginSlide{from{opacity:0;transform:translateY(40px) scale(0.95)}to{opacity:1;transform:none}}
+.login-logo-area{text-align:center;margin-bottom:28px}
+.login-crest{
+  width:80px;height:80px;border-radius:50%;margin:0 auto 12px;
+  background:white;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 8px 24px rgba(122,0,0,0.3);
+  overflow: hidden;
+}
+.login-school{font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--md); text-align: center;}
+.login-title{font-size:16px;font-weight:700;color:var(--1a);margin-bottom:20px;text-align:center}
+.form-field{margin-bottom:16px}
+.form-field label{display:block;font-size:12px;font-weight:600;color:var(--66);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase}
+.form-input{
+  width:100%;padding:12px 16px;border-radius:10px;
+  border:1.5px solid var(--e);font-size:14px;color:var(--1a);
+  transition:var(--trans);outline:none;background:#fff;
+}
+.pw-wrap{position:relative}
+.pw-wrap .form-input{padding-right:44px}
+.pw-toggle{position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:var(--99)}
+.login-btn{
+  width:100%;padding:14px;border-radius:12px;border:none;
+  background:linear-gradient(135deg,var(--m),var(--ml));
+  color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+  transition:var(--trans);margin-top:8px;
+  box-shadow:0 4px 16px rgba(122,0,0,0.3);
+}
+.login-error{background:var(--rdl);color:var(--rd);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none;border:1px solid rgba(183,28,28,0.2)}
+.login-links{margin-top:12px;text-align:center;font-size:12px;color:var(--99)}
+.login-links a{color:var(--m);font-weight:600}
+
+/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+   APP SHELL
+ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */
+#app{display:none;flex-direction:column;min-height:100vh}
+#app.show{display:flex}
+
+/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+   TOPBAR
+ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */
+.app-topbar {
+  height:var(--tb);background:var(--m);
+  display:flex;align-items:center;padding:0 20px;
+  position:sticky;top:0;z-index:500;
+  box-shadow:0 2px 16px rgba(0,0,0,0.2);
+  gap:14px;
+}
+.app-topbar .hamburger{
+  width:36px;height:36px;border-radius:10px;border:none;
+  background:rgba(255,255,255,0.12);color:#fff;font-size:18px;
+  cursor:pointer;display:none;align-items:center;justify-content:center;
+  transition:var(--trans);flex-shrink:0;
+}
+.app-topbar-logo{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.app-topbar-logo .crest{
+  width:40px;height:40px;border-radius:50%;background:white;
+  display:flex;align-items:center;justify-content:center;
+  overflow: hidden;
+}
+.school-name{font-size:14px;font-weight:700;color:#fff}
+.topbar-center{flex:1;display:flex;align-items:center;justify-content:center}
+.breadcrumb-bar{font-size:13px;color:rgba(255,255,255,0.6)}
+.breadcrumb-bar strong{color:#fff;font-weight:600}
+.topbar-right{display:flex;align-items:center;gap:10px;margin-left:auto}
+.tb-chip{
+  padding:5px 14px;border-radius:20px;
+  background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
+  color:#fff;font-size:11px;font-weight:600;white-space:nowrap;
+}
+.tb-user{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 8px 4px 4px;border-radius:10px;transition:var(--trans)}
+.tb-user:hover{background:rgba(255,255,255,0.1)}
+.tb-user-ava{width:32px;height:32px;border-radius:9px;background:var(--g);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:var(--md);flex-shrink:0}
+.tb-user-name{font-size:12px;color:#fff;font-weight:600}
+.tb-icon-btn{
+  width:36px;height:36px;border-radius:10px;border:none;
+  background:rgba(255,255,255,0.12);color:#fff;font-size:16px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:var(--trans);position:relative;flex-shrink:0;
+}
+
+/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+   LAYOUT
+ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */
+.layout{display:flex;flex:1;position:relative;overflow:hidden}
+
+/* SIDEBAR */
+.sidebar{
+  width:var(--sb);min-width:var(--sb);background:var(--md);
+  height:calc(100vh - var(--tb));position:sticky;top:var(--tb);
+  overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;
+  transition:width 0.3s;
+  z-index:200;flex-shrink:0;
+}
+.sidebar.collapsed{width:var(--sbm);min-width:var(--sbm)}
+.sidebar.collapsed .sb-section{display:none}
+.sidebar.collapsed .sb-text{display:none}
+.sidebar.collapsed .sb-link{justify-content:center}
+.sidebar.collapsed .sb-icon{margin:0}
+.sb-foot{padding:10px 8px;border-top:1px solid rgba(255,255,255,0.08)}
+.sb-collapse-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:9px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.55);cursor:pointer;font-weight:800;font-size:12px;transition:var(--trans)}
+.sb-collapse-btn:hover{background:rgba(255,255,255,0.10);color:rgba(255,255,255,0.75)}
+.sb-nav{flex:1;padding:12px 8px}
+.sb-section{
+  font-size:9px;letter-spacing:0.18em;color:rgba(255,255,255,0.25);
+  text-transform:uppercase;padding:14px 12px 5px;font-weight:700;
+  white-space:nowrap; overflow: hidden;
+}
+.sb-link{
+  display:flex;align-items:center;gap:11px;
+  padding:10px 12px;border-radius:10px;margin-bottom:2px;
+  color:rgba(255,255,255,0.5);font-size:13px;font-weight:500;
+  cursor:pointer;transition:var(--trans);
+  white-space: nowrap; overflow: hidden;
+}
+.sb-link:hover{background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.85)}
+.sb-link.active{background:rgba(245,196,0,0.15);color:var(--g)}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;overflow-y:auto;height:calc(100vh - var(--tb))}
+
+/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+   COMPONENTS
+ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */
+.page{padding:24px;flex:1;max-width:1600px;width:100%;margin:0 auto}
+.page-hero{margin-bottom:24px}
+.page-title{font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:var(--1a);line-height:1.15}
+
+.stats{display:grid;gap:14px;margin-bottom:22px}
+.stats-4{grid-template-columns:repeat(4,1fr)}
+.stat-card{background:var(--white);border-radius:var(--rad);padding:18px 20px;border:1px solid var(--e);position:relative;overflow:hidden;transition:var(--trans)}
+.stat-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px)}
+.stat-num{font-family:'Playfair Display',serif;font-size:38px;font-weight:700;color:var(--1a);line-height:1}
+.stat-label{font-size:11px;color:var(--99);margin-top:5px;font-weight:500}
+.stat-accent{position:absolute;bottom:0;left:0;width:100%;height:3px}
+.stat-accent.red{background:var(--m)} .stat-accent.gold{background:var(--g)} .stat-accent.blue{background:var(--bl)} .stat-accent.green{background:var(--gr)}
+
+.card{background:var(--white);border-radius:var(--rad);border:1px solid var(--e);overflow:hidden}
+.card-head{padding:16px 20px;border-bottom:1px solid var(--f0);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.card-title{font-size:14px;font-weight:700;color:var(--1a)}
+.card-body{padding:18px 20px}
+.card-body.no-pad{padding:0}
+
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:10px;border:none;font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:var(--trans);white-space:nowrap}
+.btn-primary{background:var(--m);color:#fff;}
+.btn-ghost{background:var(--f0);color:var(--66)}
+.btn-gold{background:var(--g);color:var(--md)}
+
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:10px;text-transform:uppercase;color:var(--99);padding:10px;border-bottom:1px solid var(--e);}
+.tbl td{padding:11px 10px;border-bottom:1px solid var(--f0);font-size:13px;}
+
+.badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;display:inline-block;white-space:nowrap}
+.badge.green{background:var(--grl);color:var(--gr)}
+.badge.red{background:var(--rdl);color:var(--rd)}
+.sub{font-size:11px;color:var(--99);margin-top:2px}
+.btn-xs{padding:5px 10px;font-size:12px;border-radius:9px}
+.dropzone{border:2px dashed var(--e);border-radius:12px;padding:14px;text-align:center;background:linear-gradient(135deg,var(--f8),#fff);cursor:pointer;transition:var(--trans)}
+.dropzone.drag{border-color:var(--m);background:linear-gradient(135deg,var(--mll),#fff)}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* Simple tabs (used in Student History modal) */
+.tabs{display:flex;gap:4px;background:var(--f0);border-radius:10px;padding:4px}
+.tab-b{padding:6px 12px;border-radius:8px;border:none;background:transparent;font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;color:var(--66);cursor:pointer;transition:var(--trans)}
+.tab-b.active{background:#fff;color:var(--m);box-shadow:var(--shadow)}
+.tab-p{display:none}
+.tab-p.active{display:block}
+
+/* Row items */
+.ri{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--f0)}
+.ri:last-child{border-bottom:none}
+.ri-info .rn{font-size:13px;font-weight:800;color:var(--1a)}
+.ri-info .rd{font-size:11px;color:var(--99);margin-top:2px}
+.ri-end{margin-left:auto}
+
+/* Toggle */
+.tog{position:relative;display:inline-block;width:44px;height:24px}
+.tog input{opacity:0;width:0;height:0}
+.tog-sl{position:absolute;cursor:pointer;inset:0;background:var(--e);border-radius:24px;transition:var(--trans)}
+.tog-sl::before{content:'';position:absolute;width:18px;height:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:var(--trans);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.tog input:checked~.tog-sl{background:var(--m)}
+.tog input:checked~.tog-sl::before{transform:translateX(20px)}
+
+/* MODALS */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:20px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg);animation:modalIn 0.3s cubic-bezier(.34,1.56,.64,1)}
+.modal-head{padding:20px 24px;border-bottom:1px solid var(--f0);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1}
+.modal-body{padding:20px 24px}
+.modal-foot{padding:16px 24px;border-top:1px solid var(--f0);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:#fff}
+
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--66);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em}
+.field-input,.field-select{ width:100%;padding:10px 14px;border-radius:9px; border:1.5px solid var(--e);font-size:13px;color:var(--1a); background:#fff;transition:var(--trans);outline:none; }
+
+.qa-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.qa-btn{display:flex;flex-direction:column;align-items:center;gap:7px;padding:14px 8px;border-radius:12px;border:1.5px solid var(--e);background:var(--white);cursor:pointer;transition:var(--trans);font-family:'Outfit',sans-serif}
+.qa-btn .qi{font-size:20px}
+.qa-btn .ql{font-size:11px;font-weight:600;color:var(--1a);text-align:center;line-height:1.3}
+
+/* Flash Success */
+.flash-success{
+  position:fixed;top:80px;right:20px;z-index:5000;
+  background:var(--gr);color:#fff;padding:12px 20px;border-radius:12px;
+  font-size:13px;font-weight:600;box-shadow:var(--shadow-lg);
+  display:flex;align-items:center;gap:8px;
+  animation:flashIn 0.4s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes flashIn{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+
+.grid-2{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;align-items:start}
+.seg{display:flex;gap:6px;background:var(--f0);padding:6px;border-radius:12px;flex-wrap:wrap}
+.seg-btn{border:none;background:transparent;padding:8px 12px;border-radius:10px;font-weight:700;font-size:12px;color:var(--66);cursor:pointer;transition:var(--trans);font-family:'Outfit',sans-serif}
+.seg-btn.active{background:#fff;color:var(--m);box-shadow:var(--shadow)}
+.help-box{border:1px dashed var(--e);border-radius:12px;background:var(--f8);padding:12px 14px}
+.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kv-item{border:1px solid var(--e);border-radius:12px;background:#fff;padding:10px 12px}
+.kv-item .k{font-size:11px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:var(--66);margin-bottom:6px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace}
+.muted{color:var(--66)}
+.tt-today-row td{background:rgba(245,196,0,.08)}
+.tt-today-row td:first-child{background:rgba(245,196,0,.14)}
+.tt-now-col{box-shadow:inset 0 0 0 9999px rgba(27,94,32,.06)}
+.tt-now-cell{background:rgba(27,94,32,.10)!important;border-color:rgba(27,94,32,.35)!important}
+.tt-now-cell input{border-color:rgba(27,94,32,.4)!important}
+
+/* Communications workspace */
+.comms-shell{display:grid;grid-template-columns:300px minmax(0,1fr) 320px;gap:14px;align-items:start}
+.comms-column{display:flex;flex-direction:column;gap:14px;min-width:0}
+.comms-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.comms-hero-copy{max-width:780px}
+.comms-hero-kicker{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:var(--m);margin-bottom:6px}
+.comms-studio{background:linear-gradient(180deg,#f7f3ee,#efe6da);border:1px solid #e4d8c9;border-radius:20px;overflow:hidden;box-shadow:var(--shadow)}
+.comms-studio-head{padding:18px 20px;border-bottom:1px solid rgba(122,0,0,.08);display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.comms-studio-head .meta{font-size:12px;color:var(--66)}
+.comms-toolbar{padding:14px 18px;border-bottom:1px solid rgba(122,0,0,.08);display:flex;flex-wrap:wrap;gap:10px;background:rgba(255,255,255,.72)}
+.comms-toolgroup{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px;border-radius:14px;background:#fff;border:1px solid rgba(122,0,0,.10)}
+.comms-toolgroup-label{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--99);padding:0 4px}
+.comms-token-cloud{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px;border-bottom:1px solid rgba(122,0,0,.08);background:rgba(255,255,255,.5)}
+.comms-editor-stage{padding:24px;background:
+  radial-gradient(circle at top left, rgba(245,196,0,.14), transparent 32%),
+  radial-gradient(circle at bottom right, rgba(122,0,0,.10), transparent 30%),
+  linear-gradient(180deg,#e8ddcf,#d9cab7)}
+.comms-paper{background:#fff;border:1px solid #ddd2c3;border-radius:10px;box-shadow:0 18px 50px rgba(74,0,0,.12);max-width:860px;margin:0 auto;min-height:980px;position:relative}
+.comms-paper::before{content:'';position:absolute;inset:20px 26px auto 26px;height:1px;background:linear-gradient(90deg,transparent,rgba(122,0,0,.16),transparent)}
+.comms-paper-meta{padding:28px 38px 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e7e73;font-weight:800}
+.comms-editor{padding:22px 38px 42px;min-height:840px;font-size:15px;line-height:1.75;color:#2a211d}
+.comms-editor:focus{outline:none}
+.comms-editor p,.comms-editor ul,.comms-editor ol,.comms-editor blockquote,.comms-editor table{margin-bottom:14px}
+.comms-editor h1,.comms-editor h2,.comms-editor h3{font-family:'Playfair Display',serif;color:var(--md);margin:0 0 14px}
+.comms-editor blockquote{border-left:4px solid rgba(122,0,0,.3);padding-left:14px;color:#6e5c51}
+.comms-editor table{width:100%;border-collapse:collapse}
+.comms-editor th,.comms-editor td{border:1px solid #d7d0c4;padding:8px;text-align:left}
+.comms-help{border:1px dashed #d8cbb7;border-radius:16px;background:linear-gradient(180deg,#fffaf2,#fff);padding:14px 16px}
+.comms-help strong{display:block;color:var(--md);margin-bottom:4px}
+.comms-library{display:flex;flex-direction:column;gap:10px;max-height:780px;overflow:auto;padding-right:4px}
+.comms-library-item{border:1px solid var(--e);border-radius:16px;background:#fff;padding:14px;cursor:pointer;transition:var(--trans)}
+.comms-library-item:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+.comms-library-item-title{font-weight:900;color:var(--1a);margin-bottom:6px}
+.comms-library-item-meta{font-size:12px;color:var(--66);margin-top:6px}
+.comms-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.02em;background:var(--f0);color:var(--66)}
+.comms-pill.draft{background:var(--rdl);color:var(--rd)}
+.comms-pill.approved{background:var(--gll);color:#8a6900}
+.comms-pill.published{background:var(--grl);color:var(--gr)}
+.comms-pill.scope{background:var(--bll);color:var(--bl)}
+.comms-data-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.comms-data-cell{border:1px solid var(--e);border-radius:14px;background:#fff;padding:10px 12px}
+.comms-data-cell .k{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--99);margin-bottom:5px}
+.comms-data-cell .v{font-size:13px;font-weight:800;color:var(--1a)}
+.comms-campaign-list{display:flex;flex-direction:column;gap:10px}
+.comms-campaign-card{border:1px solid var(--e);border-radius:16px;background:#fff;padding:12px 14px}
+.comms-campaign-card .title{font-weight:900;color:var(--1a);margin-bottom:5px}
+.comms-campaign-card .meta{font-size:12px;color:var(--66);margin-bottom:8px}
+.comms-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+@media(max-width:1280px){
+  .comms-shell{grid-template-columns:1fr}
+  .comms-paper{max-width:100%}
+}
+
+@media(max-width:900px){
+  .sidebar{position:fixed;top:var(--tb);left:0;bottom:0;transform:translateX(-100%);z-index:300;width:var(--sb)!important;}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .sidebar-overlay.show{display:block}
+  .sidebar.collapsed{width:var(--sb)!important;min-width:var(--sb)!important}
+  .app-topbar .hamburger{display:flex}
+  .page{padding:14px}
+  .stats-4{grid-template-columns:repeat(2,1fr)}
+  .topbar-center{display:none}
+  .grid-2{grid-template-columns:1fr}
+  .kv-grid{grid-template-columns:1fr}
+}
+
+@media(max-width:640px){
+  .page{padding:12px}
+  .stats-4{grid-template-columns:1fr}
+  .tb-chip{display:none}
+  .tb-user-name{display:none}
+  .modal-overlay{align-items:flex-end;padding:0}
+  .modal{border-radius:16px 16px 0 0;max-height:88vh}
+}
+
+@media(max-width:420px){
+  .login-card{padding:22px 18px}
+  .page-title{font-size:26px}
+}
+</style>
+</head>
+<body>
+<!-- Hidden CSRF token source for JS (works even when CSRF cookie is HttpOnly).
+     IMPORTANT: do not use a <form> here; some browsers may treat Enter keypress
+     in other inputs as a form submit and reload the page unexpectedly. -->
+<div id="csrf-form" style="display:none">{% csrf_token %}</div>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-logo-ring"><div class="splash-logo-inner"><img src="{% static 'school/assets/logo.jpg' %}" class="school-logo-img"></div></div>
+  <div class="splash-name">Bitende Junior School</div>
+  <div class="splash-sub">Management System</div>
+  <div class="splash-loader"><div class="splash-loader-bar"></div></div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo-area">
+      <div class="login-crest"><img src="{% static 'school/assets/logo.jpg' %}" class="school-logo-img"></div>
+      <div class="login-school">Bitende Junior School</div>
+    </div>
+    <div class="login-title" id="login-title">Sign In</div>
+    <div class="login-error" id="login-error"></div>
+
+    <div id="login-form">
+      <div class="form-field"><label>Username, Email or Phone</label><input class="form-input" id="login-user" type="text" placeholder="admin / 0701234567 / name@gmail.com" autocomplete="username"></div>
+      <div class="form-field"><label>Password</label><input class="form-input" id="login-pass" type="password" autocomplete="current-password"></div>
+      <button class="login-btn" type="button" id="login-btn" onclick="doLogin()">Sign In -></button>
+      <div class="login-links"><a href="javascript:void(0)" onclick="showForgot()">Forgot password?</a></div>
+    </div>
+
+    <div id="forgot-form" style="display:none">
+      <div class="form-field"><label>Email or Phone</label><input class="form-input" id="fp-identifier" type="text" placeholder="0701234567 or name@gmail.com"></div>
+      <button class="login-btn" type="button" id="fp-send-btn" onclick="requestPasswordReset()">Send Reset Code -></button>
+      <div id="fp-step2" style="display:none;margin-top:14px">
+        <div class="form-field"><label>OTP Code</label><input class="form-input" id="fp-otp" inputmode="numeric" maxlength="6" placeholder="6-digit code"></div>
+        <div class="form-field"><label>New Password</label><input class="form-input" id="fp-new-pass" type="password" autocomplete="new-password"></div>
+        <div class="form-field"><label>Confirm Password</label><input class="form-input" id="fp-confirm-pass" type="password" autocomplete="new-password"></div>
+        <button class="login-btn" type="button" onclick="confirmPasswordReset()">Reset Password -></button>
+      </div>
+      <div class="login-links"><a href="javascript:void(0)" onclick="showLogin()">Back to sign in</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <header class="app-topbar">
+    <button class="hamburger" onclick="toggleSidebar()">Menu</button>
+    <div class="app-topbar-logo"><div class="crest"><img src="{% static 'school/assets/logo.jpg' %}" class="school-logo-img"></div><div class="school-name">BJS Management</div></div>
+    <div class="topbar-center"><div class="breadcrumb-bar" id="topbar-breadcrumb">Dashboard</div></div>
+    <div class="topbar-right">
+      <div class="tb-chip" id="tb-term">Loading term...</div>
+      <button class="tb-icon-btn" onclick="openNotifications()" title="Notifications">N<span id="notif-dot" style="display:none;position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--g);border:1px solid var(--m)"></span></button>
+      <div class="tb-user"><div class="tb-user-ava" id="topbar-ava">AD</div><div class="tb-user-name" id="topbar-name">Admin</div></div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="sidebar-overlay" id="sb-overlay" onclick="toggleSidebar()"></div>
+    <aside class="sidebar" id="sidebar">
+      <nav class="sb-nav" id="sb-nav-content"></nav>
+      <div class="sb-foot">
+        <button class="sb-collapse-btn" id="sb-collapse-btn" onclick="toggleSidebarCollapse()">Collapse</button>
+      </div>
+    </aside>
+    <main class="main" id="main-content"></main>
+  </div>
+</div>
+
+<!-- NOTIFICATIONS DRAWER -->
+<div id="notif-overlay" class="sidebar-overlay" style="display:none;z-index:520" onclick="closeNotifications()"></div>
+<div id="notif-drawer" style="position:fixed;top:var(--tb);right:0;width:340px;max-width:92vw;height:calc(100vh - var(--tb));background:#fff;border-left:1px solid var(--e);box-shadow:var(--shadow-lg);transform:translateX(105%);transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:521;display:flex;flex-direction:column">
+  <div style="padding:14px 16px;border-bottom:1px solid var(--f0);display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <div style="font-weight:900">Notifications</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-xs btn-ghost" onclick="markAllNotificationsRead()">Mark all read</button>
+      <button class="btn btn-xs btn-ghost" onclick="closeNotifications()">X</button>
+    </div>
+  </div>
+  <div style="padding:10px 12px;border-bottom:1px solid var(--f0);display:flex;gap:6px;flex-wrap:wrap">
+    <button class="btn btn-xs btn-ghost" onclick="loadNotifications('all')">All</button>
+    <button class="btn btn-xs btn-ghost" onclick="loadNotifications('finance')">Finance</button>
+    <button class="btn btn-xs btn-ghost" onclick="loadNotifications('academic')">Academic</button>
+    <button class="btn btn-xs btn-ghost" onclick="loadNotifications('events')">Events</button>
+    <button class="btn btn-xs btn-ghost" onclick="loadNotifications('security')">Security</button>
+  </div>
+  <div id="notif-filters" style="padding:10px 12px;border-bottom:1px solid var(--f0);display:none">
+    <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--m);margin-bottom:8px">Finance Filters</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px">
+        <select class="field-select" id="notif-class-filter" onchange="loadNotifications(window.ACTIVE_NOTIF_CATEGORY || 'all')">
+          <option value="">All classes</option>
+        </select>
+      </div>
+      <div style="flex:1;min-width:160px">
+        <input class="field-input" id="notif-student-filter" placeholder="Student name or ID" oninput="debouncedNotificationFilter()">
+      </div>
+      <button class="btn btn-xs btn-ghost" onclick="clearNotificationFilters()">Reset</button>
+    </div>
+  </div>
+  <div id="notif-list" style="flex:1;overflow-y:auto"></div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modal-class">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Manage Class</div><button onclick="closeModal('modal-class')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="c-id">
+      <div class="field"><label>Level</label><input class="field-input" id="c-level" placeholder="e.g. P.1"></div>
+      <div class="field"><label>Sections (comma separated)</label><input class="field-input" id="c-sections" placeholder="e.g. A, B"></div>
+      <div class="field"><label>Annual Fee (UGX)</label><input class="field-input" id="c-fee" type="number" min="0"></div>
+      <div class="field"><label>Max Students / Section</label><input class="field-input" id="c-max" type="number" min="1" value="40"></div>
+      <div class="field"><label>Teacher A (name)</label><input class="field-input" id="c-ta" placeholder="e.g. Mrs. Nabwire S."></div>
+      <div class="field"><label>Teacher B (name)</label><input class="field-input" id="c-tb" placeholder="optional"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="clearClassForm()">Clear</button>
+      <button class="btn btn-primary" onclick="saveClass()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-user">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Create New User Account</div><button onclick="closeModal('modal-user')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="u-id">
+      <div class="field"><label>Username</label><input class="field-input" id="u-username"></div>
+      <div class="field"><label>Password</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <select class="field-select" id="u-pw-mode" style="min-width:210px" onchange="toggleUserPasswordMode()">
+            <option value="auto">Auto-generate temporary password</option>
+            <option value="manual">Set temporary password manually</option>
+          </select>
+          <input class="field-input" id="u-password" type="password" placeholder="Min 10 chars, upper/lower/number/symbol" style="min-width:220px;display:none">
+        </div>
+        <div class="sub">User will be reminded to change password after first login. Manual passwords must be strong.</div>
+      </div>
+      <div class="field"><label>Role</label>
+        <select class="field-select" id="u-role">
+          <option value="superadmin">Super Admin</option>
+          <option value="admin">Admin</option>
+          <option value="bursar">Bursar</option>
+          <option value="reception">Reception</option>
+          <option value="teacher">Teacher</option>
+          <option value="parent">Parent</option>
+          <option value="student">Student</option>
+        </select>
+      </div>
+      <div class="field"><label>First Name</label><input class="field-input" id="u-fname"></div>
+      <div class="field"><label>Last Name</label><input class="field-input" id="u-lname"></div>
+      <div class="field"><label>Phone Number (optional)</label><input class="field-input" id="u-phone" type="tel"></div>
+      <div class="field"><label>Email Address (optional)</label><input class="field-input" id="u-email" type="email"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="saveUser()">Create Account</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-teacher">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Register Teacher</div><button onclick="closeModal('modal-teacher')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="t-id">
+      <div class="field"><label>First Name</label><input class="field-input" id="t-fn"></div>
+      <div class="field"><label>Last Name</label><input class="field-input" id="t-ln"></div>
+      <div class="sub" id="t-un-preview" style="margin-top:-8px">Username preview: <strong>...</strong></div>
+      <div class="field"><label>Phone</label><input class="field-input" id="t-ph" type="tel" placeholder="0701234567"></div>
+      <div class="field"><label>Email</label><input class="field-input" id="t-em" type="email" placeholder="name@gmail.com"></div>
+      <div class="field"><label>Password</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <select class="field-select" id="t-pw-mode" style="min-width:210px" onchange="toggleTeacherPasswordMode()">
+            <option value="auto">Auto-generate temporary password</option>
+            <option value="manual">Set temporary password manually</option>
+          </select>
+          <input class="field-input" id="t-pw" type="password" placeholder="Min 10 chars, upper/lower/number/symbol" style="min-width:220px;display:none">
+        </div>
+        <div class="sub">Teacher will be reminded to change password after first login. Manual passwords must be strong.</div>
+      </div>
+      <div class="field">
+        <label>Subjects</label>
+        <select class="field-select" id="t-subj" multiple style="height:110px"></select>
+        <div class="sub">Hold Ctrl/Cmd to select multiple. Subjects are configured under Academic -> Subjects.</div>
+      </div>
+      <div class="field"><label>Assigned Class</label>
+        <select class="field-select" id="t-cls">
+          <option value="">Not assigned yet</option>
+        </select>
+        <div class="sub">Assigning a class helps timetable building and teacher portal views.</div>
+      </div>
+
+      <div class="field" id="t-ct-box" style="display:none">
+        <label>Class Teacher (DOS / Super Admin)</label>
+        <div class="sub" id="t-ct-current" style="margin-top:-6px">Not assigned as class teacher.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <select class="field-select" id="t-ct-class" style="min-width:220px">
+            <option value="">Select class...</option>
+          </select>
+          <input class="field-input" id="t-ct-section" placeholder="Section (optional)" style="min-width:160px">
+          <button class="btn btn-ghost" onclick="assignClassTeacherFromModal()">Assign</button>
+          <button class="btn btn-ghost" onclick="unassignClassTeacherFromModal()">Unassign</button>
+        </div>
+        <div class="sub">Class teachers get a class overview (attendance/performance) and are shown to parents as the primary contact.</div>
+      </div>
+      <div class="field"><label>Employment Type</label>
+        <select class="field-select" id="t-type">
+          <option>Permanent</option>
+          <option>Contract</option>
+          <option>Volunteer</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="clearTeacherForm()">Clear</button>
+      <button class="btn btn-primary" onclick="saveTeacher()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-student">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Register Student</div><button onclick="closeModal('modal-student')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="s-id">
+      <div class="field"><label>Student System ID</label><input class="field-input" id="s-sid" placeholder="Auto-generated" readonly></div>
+      <div class="field"><label>First Name</label><input class="field-input" id="s-fn"></div>
+      <div class="field"><label>Last Name</label><input class="field-input" id="s-ln"></div>
+      <div class="field"><label>Date of Birth</label><input class="field-input" id="s-dob" type="date"></div>
+      <div class="field"><label>Gender</label>
+        <select class="field-select" id="s-gen">
+          <option value="Female">Female</option>
+          <option value="Male">Male</option>
+        </select>
+      </div>
+      <div class="field"><label>District</label><input class="field-input" id="s-dist" placeholder="e.g. Kampala"></div>
+      <div class="field"><label>Religion</label><input class="field-input" id="s-rel" placeholder="e.g. Christian"></div>
+      <div class="field"><label>Class</label><select class="field-select" id="s-class"></select></div>
+      <div class="field"><label>Section</label><input class="field-input" id="s-sec" placeholder="A"></div>
+      <div class="field"><label>Parent/Guardian Name</label><input class="field-input" id="s-pn"></div>
+      <div class="field"><label>Relationship</label><input class="field-input" id="s-prel" placeholder="Mother"></div>
+      <div class="field"><label>Parent Phone</label><input class="field-input" id="s-pph" type="tel" placeholder="0701234567"></div>
+      <div class="field"><label>Parent Email (optional)</label><input class="field-input" id="s-pem" type="email" placeholder="name@gmail.com"></div>
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--m)">Account Credentials (optional)</summary>
+        <div style="height:10px"></div>
+        <div class="field"><label>Parent Portal Password</label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <select class="field-select" id="s-ppw-mode" style="min-width:210px" onchange="toggleStudentPasswordMode()">
+              <option value="auto">Auto-generate temporary password</option>
+              <option value="manual">Set temporary password manually</option>
+            </select>
+            <input class="field-input" id="s-ppw" type="password" placeholder="Min 10 chars, upper/lower/number/symbol" style="min-width:220px;display:none">
+          </div>
+        </div>
+        <div class="field"><label>Student Portal Password</label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <select class="field-select" id="s-spw-mode" style="min-width:210px" onchange="toggleStudentPasswordMode()">
+              <option value="auto">Auto-generate temporary password</option>
+              <option value="manual">Set temporary password manually</option>
+            </select>
+            <input class="field-input" id="s-spw" type="password" placeholder="Min 10 chars, upper/lower/number/symbol" style="min-width:220px;display:none">
+          </div>
+          <div class="sub">Passwords are never stored in plain text. Manual passwords must be at least 10 characters and include uppercase, lowercase, a number, and a symbol. If lost, use Reset Portals.</div>
+        </div>
+      </details>
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--m)">More Details</summary>
+        <div style="height:10px"></div>
+        <div class="field"><label>Parent Phone 2 (optional)</label><input class="field-input" id="s-pph2" type="tel" placeholder="0712345678"></div>
+        <div class="field"><label>Home Address</label><input class="field-input" id="s-addr" placeholder="Village, District"></div>
+        <div class="field"><label>Previous School</label><input class="field-input" id="s-prev" placeholder="optional"></div>
+        <div class="field"><label>Allergies</label><input class="field-input" id="s-alg" placeholder="None"></div>
+        <div class="field"><label>Medical Conditions</label><input class="field-input" id="s-med" placeholder="None"></div>
+        <div class="field"><label>Emergency Contact Name</label><input class="field-input" id="s-ecn" placeholder="optional"></div>
+        <div class="field"><label>Emergency Contact Phone</label><input class="field-input" id="s-ecp" type="tel" placeholder="optional"></div>
+        <div class="field"><label>Transport Route</label><input class="field-input" id="s-tr" placeholder="optional"></div>
+        <div class="field"><label>Status</label>
+          <select class="field-select" id="s-status">
+            <option value="active">active</option>
+            <option value="promoted">promoted</option>
+            <option value="repeating">repeating</option>
+            <option value="graduate">graduate</option>
+            <option value="transfer_out">transfer_out</option>
+            <option value="withdrawn">withdrawn</option>
+            <option value="alumnus">alumnus</option>
+            <option value="inactive">inactive</option>
+          </select>
+        </div>
+      </details>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="clearStudentForm()">Clear</button>
+      <button class="btn btn-primary" onclick="saveStudent()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-fee">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Fee Structure</div><button onclick="closeModal('modal-fee')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="f-id">
+      <div class="field"><label>Class</label><select class="field-select" id="f-class"></select></div>
+      <div class="field"><label>Year</label><input class="field-input" id="f-year" type="number" min="2000" max="2100"></div>
+      <div class="field"><label>Term</label>
+        <select class="field-select" id="f-term">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+      </div>
+      <div class="field"><label>Amount (UGX)</label><input class="field-input" id="f-amt" type="number" min="0"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="clearFeeForm()">Clear</button>
+      <button class="btn btn-primary" onclick="saveFee()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-payment">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Edit Payment</div><button onclick="closeModal('modal-payment')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="p-id">
+      <div class="field"><label>Amount (UGX)</label><input class="field-input" id="p-amt" type="number" min="0"></div>
+      <div class="field"><label>Method</label>
+        <select class="field-select" id="p-method">
+          <option value="cash">cash</option>
+          <option value="bank">bank</option>
+          <option value="mtn_momo">mtn_momo</option>
+          <option value="airtel_money">airtel_money</option>
+          <option value="other">other</option>
+        </select>
+      </div>
+      <div class="field"><label>Reference</label><input class="field-input" id="p-ref"></div>
+      <div class="field"><label>Notes</label><input class="field-input" id="p-notes"></div>
+      <div class="sub" id="p-lock-note" style="display:none;color:var(--or)"></div>
+      <div class="sub" style="margin-top:8px">Approval, rejection, and reversal use the dedicated review actions so finance records stay auditable.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="p-reverse-btn" onclick="reversePaymentFromModal()">Reverse</button>
+      <button class="btn btn-primary" onclick="savePaymentEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-approval">
+  <div class="modal" style="max-width:980px">
+    <div class="modal-head"><div class="modal-title">Review Bank Slip</div><button onclick="closeModal('modal-approval')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="appr-id">
+      <div class="grid-2">
+        <div class="card" style="margin:0">
+          <div class="card-head"><div class="card-title">Slip Preview</div></div>
+          <div class="card-body" style="display:flex;justify-content:center">
+            <img id="appr-slip" alt="Bank Slip" src="" style="max-width:100%;max-height:420px;border-radius:14px;border:1px solid var(--e);background:#fff">
+          </div>
+          <div class="card-body" style="padding-top:0">
+            <button class="btn btn-ghost" onclick="openApprovalSlipFull()">Open Full Image</button>
+          </div>
+        </div>
+        <div class="card" style="margin:0">
+          <div class="card-head"><div class="card-title">Details</div></div>
+          <div class="card-body">
+            <div id="appr-meta" class="sub">Loading...</div>
+            <div style="height:10px"></div>
+            <div class="field" style="margin:0 0 10px 0"><label>Reference (optional)</label><input class="field-input" id="appr-ref"></div>
+            <div class="field" style="margin:0 0 10px 0"><label>Decision reason (for reject)</label><input class="field-input" id="appr-reason" placeholder="e.g. unclear slip, wrong amount"></div>
+            <div class="field" style="margin:0"><label>Internal review notes</label><textarea class="field-input" id="appr-notes" style="min-height:120px" placeholder="What you checked, what is missing, etc."></textarea></div>
+            <div class="sub" style="margin-top:10px">Approve will generate a receipt number and update the student invoice for the selected term/year.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal('modal-approval')">Cancel</button>
+      <button class="btn btn-ghost" onclick="approveFromModal()">Approve</button>
+      <button class="btn btn-primary" onclick="rejectFromModal()">Reject</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-bulk-approval">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-head"><div class="modal-title">Bulk Review</div><button onclick="closeModal('modal-bulk-approval')">X</button></div>
+    <div class="modal-body">
+      <div id="bulk-meta" class="sub">Selected: 0</div>
+      <div style="height:10px"></div>
+      <div class="field" style="margin:0 0 10px 0"><label>Action</label>
+        <select class="field-select" id="bulk-action">
+          <option value="approve">Approve selected</option>
+          <option value="reject">Reject selected</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0 0 10px 0"><label>Reject reason (only used when rejecting)</label><input class="field-input" id="bulk-reason" placeholder="e.g. unclear slip, wrong amount"></div>
+      <div class="field" style="margin:0"><label>Internal review notes</label><textarea class="field-input" id="bulk-notes" style="min-height:120px" placeholder="Note applies to all selected items."></textarea></div>
+      <div class="sub" style="margin-top:10px">Tip: Use Bulk Review for many slips that look correct and match bank statement.</div>
+    </div>
+    <div class="modal-foot" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bulk-approval')">Cancel</button>
+      <button class="btn btn-primary" onclick="applyBulkReview()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-deposit-batch">
+  <div class="modal" style="max-width:980px">
+    <div class="modal-head"><div class="modal-title" id="depb-ttl">Deposit Batch</div><button onclick="closeModal('modal-deposit-batch')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="depb-id">
+      <div id="depb-meta" class="sub">Loading...</div>
+      <div style="height:10px"></div>
+      <div class="tw">
+        <table class="tbl">
+          <thead><tr>
+            <th style="width:34px"><input id="depb-all" type="checkbox" onchange="depbToggleAll(this.checked)"></th>
+            <th>Date</th><th>Student</th><th>Amount</th><th>Receipt</th><th>Reference</th><th>Slip</th>
+          </tr></thead>
+          <tbody id="depb-rows"><tr><td colspan="7" style="color:var(--99)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost" id="depb-print-btn" onclick="printDepositBatchReportFromModal()">Print PDF</button>
+        <button class="btn btn-primary" id="depb-remove-btn" onclick="removeSelectedPaymentsFromBatch()">Remove Selected</button>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="closeModal('modal-deposit-batch')">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-stuhistory">
+  <div class="modal" style="max-width:920px">
+    <div class="modal-head"><div class="modal-title">Student History</div><button onclick="closeModal('modal-stuhistory')">X</button></div>
+    <div class="modal-body" id="sh-body">Loading...</div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('modal-stuhistory')">Close</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-term">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Start New Term</div><button onclick="closeModal('modal-term')">X</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Academic Year</label><input class="field-input" id="nt-yr" type="number" placeholder="2026"></div>
+      <div class="field"><label>Term Number</label>
+        <select class="field-select" id="nt-num">
+          <option value="1">Term 1</option>
+          <option value="2">Term 2</option>
+          <option value="3">Term 3</option>
+        </select>
+      </div>
+      <div class="field"><label>Start Date</label><input class="field-input" id="nt-st" type="date"></div>
+      <div class="field"><label>End Date</label><input class="field-input" id="nt-en" type="date"></div>
+      <div class="field"><label>Holiday Break (days)</label><input class="field-input" id="nt-brk" type="number" value="0"></div>
+      <div class="field"><label><input type="checkbox" id="nt-fees"> Auto-generate invoices (log only)</label></div>
+      <div class="field"><label><input type="checkbox" id="nt-sms"> Send SMS to parents</label></div>
+      <div class="field"><label><input type="checkbox" id="nt-marks"> Open mark-entry</label></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="startNewTerm()">Start</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-term-edit">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Edit Term</div><button onclick="closeModal('modal-term-edit')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="et-id">
+      <div class="field"><label>Academic Year</label><input class="field-input" id="et-yr" type="number" disabled></div>
+      <div class="field"><label>Term Number</label><input class="field-input" id="et-num" type="number" disabled></div>
+      <div class="field"><label>Start Date</label><input class="field-input" id="et-st" type="date"></div>
+      <div class="field"><label>End Date</label><input class="field-input" id="et-en" type="date"></div>
+      <div class="field"><label>Holiday Break (days)</label><input class="field-input" id="et-brk" type="number" value="0"></div>
+      <div class="field"><label><input type="checkbox" id="et-fees"> Auto-generate invoices on start</label></div>
+      <div class="field"><label><input type="checkbox" id="et-sms"> Send SMS to parents on start</label></div>
+      <div class="field"><label><input type="checkbox" id="et-marks"> Open mark-entry on start</label></div>
+      <div class="field"><label><input type="checkbox" id="et-arch"> Archived (not active)</label></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-term-edit')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTermEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-adj">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-head"><div class="modal-title">Add Adjustment</div><button onclick="closeModal('modal-adj')">X</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="adj-id" value="">
+      <input type="hidden" id="adj-student" value="">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="field" style="margin:0;min-width:160px"><label>Year</label><input class="field-input" id="adj-year" type="number"></div>
+        <div class="field" style="margin:0;min-width:160px"><label>Term</label>
+          <select class="field-select" id="adj-term">
+            <option value="1">Term 1</option>
+            <option value="2">Term 2</option>
+            <option value="3">Term 3</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0;min-width:220px"><label>Type</label>
+          <select class="field-select" id="adj-kind">
+            <option value="discount">Discount (reduces due)</option>
+            <option value="waiver">Waiver (reduces due)</option>
+            <option value="penalty">Late Penalty (adds due)</option>
+            <option value="correction">Correction (adds/reduces)</option>
+          </select>
+        </div>
+      </div>
+      <div style="height:10px"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="field" style="margin:0;min-width:220px"><label>Amount (UGX)</label><input class="field-input" id="adj-amount" type="number" min="0" placeholder="Enter amount"></div>
+        <div class="field" style="margin:0;min-width:320px;flex:1"><label>Title (optional)</label><input class="field-input" id="adj-title" placeholder="e.g. Scholarship, Late fee"></div>
+      </div>
+      <div style="height:10px"></div>
+      <div class="field" style="margin:0"><label>Notes (optional)</label><textarea class="field-input" id="adj-notes" style="min-height:90px" placeholder="Reason / details"></textarea></div>
+      <div class="sub" style="margin-top:10px">
+        Discounts/waivers will automatically reduce the term due. Penalties will increase it.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-adj')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAdjustment()">Save Adjustment</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-handover">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-head"><div class="modal-title" id="ho-ttl">Handover</div><button onclick="closeModal('modal-handover')">X</button></div>
+    <div class="modal-body">
+      <div id="ho-body" style="font-size:13px;color:var(--66)"></div>
+      <div class="sub" style="margin-top:10px">These temporary credentials are shown once. The user will be required to change password after login.</div>
+    </div>
+    <div class="modal-foot" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn btn-ghost" id="ho-print-cred" onclick="handoverPrint('cred')" style="display:none">Print Credentials</button>
+      <button class="btn btn-ghost" id="ho-print-adm" onclick="handoverPrint('adm')" style="display:none">Print Admission Letter</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-handover')">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-image">
+  <div class="modal" style="max-width:920px">
+    <div class="modal-head"><div class="modal-title" id="img-ttl">Image</div><button onclick="closeModal('modal-image')">X</button></div>
+    <div class="modal-body" style="padding:0">
+      <div style="padding:14px">
+        <img id="img-view" src="" alt="image" style="width:100%;height:auto;border-radius:10px;border:1px solid var(--e)">
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('modal-image')">Close</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-doc">
+  <div class="modal" style="max-width:980px">
+    <div class="modal-head"><div class="modal-title" id="doc-ttl">Document</div><button onclick="closeModal('modal-doc')">X</button></div>
+    <div class="modal-body">
+      <div class="sub" id="doc-meta" style="margin-bottom:8px"></div>
+      <div id="doc-rendered" style="min-height:240px;border:1px solid var(--e);border-radius:10px;padding:16px;background:#fffdf8;overflow:auto"></div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-weight:700">Plain text / source</summary>
+        <textarea class="field-input" id="doc-body" style="margin-top:10px;min-height:220px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"></textarea>
+      </details>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-doc')">Close</button>
+      <button class="btn btn-primary" onclick="printDocModal()">Print</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cache-bust to avoid stale SPA JS after deployments/edits. -->
+<script src="{% static 'school/js/app.js' %}?v=20260412c" defer></script>
+</body>
+</html>

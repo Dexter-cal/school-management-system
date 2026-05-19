@@ -1,0 +1,18 @@
+{
+  "venvPath": "school-management-system",
+  "venv": ".venv",
+  "reportMissingModuleSource": "none",
+  "include": [
+    "school-management-system\\bjs_management",
+    "school-management-system\\school",
+    "school-management-system\\manage.py"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "school-management-system",
+      "extraPaths": [
+        "school-management-system"
+      ]
+    }
+  ]
+}

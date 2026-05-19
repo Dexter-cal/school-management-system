@@ -1,0 +1,10 @@
+Django
+djangorestframework
+django-allauth
+django-cors-headers
+Pillow
+requests
+reportlab
+twilio
+python-decouple
+qrcode # Added for QR code generation

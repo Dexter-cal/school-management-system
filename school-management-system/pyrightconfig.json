@@ -1,0 +1,31 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "reportMissingModuleSource": "none",
+  "reportAttributeAccessIssue": false,
+  "reportUnknownAttributeType": false,
+  "include": [
+    "bjs_management",
+    "school/admin.py",
+    "school/adapters.py",
+    "school/apps.py",
+    "school/models.py",
+    "school/serializers.py",
+    "school/urls.py",
+    "school/utils.py",
+    "school/validators.py",
+    "school/views.py",
+    "manage.py"
+  ],
+  "ignore": [
+    "school/tests.py"
+  ],
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        "."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+ERROR: Could not install packages due to an OSError: [WinError 1450] Insufficient system resources exist to complete the requested service: 'c:\\Users\\n\\Desktop\\school-management-system-\\school-management-system\\.venv\\Lib\\site-packages\\pip\\_vendor\\resolvelib\\resolvers'
+

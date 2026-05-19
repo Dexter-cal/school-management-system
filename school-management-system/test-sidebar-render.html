@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sidebar Render Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .test-result { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+        .pass { background: #d4edda; }
+        .fail { background: #f8d7da; }
+    </style>
+</head>
+<body>
+    <h1>Sidebar Render Test</h1>
+    
+    <div id="results"></div>
+    
+    <script>
+    const resultsDiv = document.getElementById('results');
+    
+    function addResult(title, status, message) {
+        const div = document.createElement('div');
+        div.className = 'test-result ' + (status === 'pass' ? 'pass' : 'fail');
+        div.innerHTML = `<strong>${title}:</strong> ${message}`;
+        resultsDiv.appendChild(div);
+    }
+    
+    // Test 1: Check if NAV is defined
+    const NAV = {
+        superadmin: [
+            { section: 'Overview' },
+            { label: 'Dashboard', icon: 'D', page: 'dashboard' },
+            { section: 'Administration' },
+            { label: 'User Accounts', icon: 'U', page: 'users' },
+            { section: 'System' },
+            { label: 'Settings', icon: 'S', page: 'settings' }, 
+        ]
+    };
+    
+    addResult('NAV Definition', 'pass', `NAV.superadmin has ${NAV.superadmin.length} items`);
+    
+    // Test 2: Simulate buildSidebar behavior
+    const currentUser = {
+        id: 1,
+        username: 'admin',
+        profile: { role: 'superadmin', avatar: 'AD' },
+        caps: {'term_manage': true}
+    };
+    
+    addResult('currentUser', 'pass', `role=${currentUser.profile.role}`);
+    
+    // Test 3: Simulate buildSidebar
+    let sidebarHTML = '';
+    const role = (currentUser.profile && currentUser.profile.role) || 'superadmin';
+    (NAV[role] || NAV.superadmin).forEach(item => {
+        if (item && item.cap) {
+            const caps = currentUser.caps || {};
+            if (!caps[item.cap]) return;
+        }
+        if (item.section) {
+            sidebarHTML += `<div class="sb-section">${item.section}</div>`;
+        } else {
+            sidebarHTML += `<div class="sb-link">${item.label}</div>`;
+        }
+    });
+    sidebarHTML += `<div class="sb-section">Account</div>`;
+    sidebarHTML += `<div class="sb-link">Logout</div>`;
+    
+    addResult('Sidebar HTML Generation', 'pass', `Generated ${sidebarHTML.split('sb-link').length - 1} links`);
+    
+    // Show HTML
+    const preview = document.createElement('div');
+    preview.className = 'test-result pass';
+    preview.innerHTML = '<strong>Sidebar Preview:</strong><div style="background: #222; color: white; padding: 10px; margin-top: 10px;">' + sidebarHTML.replace(/</g, '&lt;').substring(0, 500) + '...</div>';
+    resultsDiv.appendChild(preview);
+    
+    addResult('Settings in menu', NAV.superadmin.find(i => i.page === 'settings') ? 'pass' : 'fail', 'Settings page found');
+    </script>
+</body>
+</html>

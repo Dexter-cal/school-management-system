@@ -1,0 +1,25 @@
+INFO Watching for file changes with StatReloader
+INFO "GET / HTTP/1.1" 200 73753
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO - Broken pipe from ('127.0.0.1', 59140)
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO "POST /api/auth/login/ HTTP/1.1" 200 528
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO "GET /api/auth/me/ HTTP/1.1" 200 498
+INFO "GET /api/students/ HTTP/1.1" 200 3368
+INFO "GET /api/teachers/ HTTP/1.1" 200 2
+INFO "GET /api/classes/ HTTP/1.1" 200 584
+INFO "GET /api/events/ HTTP/1.1" 200 2
+INFO "GET /api/api-credentials/health/ HTTP/1.1" 200 1583
+INFO "GET /api/cashbook-closes/handover/?close_date=2026-04-12 HTTP/1.1" 200 1337
+INFO "GET /api/notifications/ HTTP/1.1" 200 701
+INFO "GET /api/document-drafts/ HTTP/1.1" 200 2
+INFO - Broken pipe from ('127.0.0.1', 59155)
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO "POST /api/auth/login/ HTTP/1.1" 200 528
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO "GET /api/students/ HTTP/1.1" 200 3368
+INFO "GET /api/classes/ HTTP/1.1" 200 584
+INFO "POST /api/document-drafts/ HTTP/1.1" 201 484
+INFO "POST /api/document-drafts/1/preview-merge/ HTTP/1.1" 200 739
+INFO - Broken pipe from ('127.0.0.1', 60511)

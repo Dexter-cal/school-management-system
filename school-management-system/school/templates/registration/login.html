@@ -1,0 +1,42 @@
+<h1>Log In</h1>
+<form method="post">
+    {% csrf_token %}
+    {% for field in form %}
+        <p>
+            {{ field.label_tag }}
+            {% if field.name == 'password' %}
+                <div style="position: relative;">
+                    <input type="password" name="{{ field.name }}" id="{{ field.id_for_label }}" required>
+                    <span id="togglePassword" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer;">
+                        &#128065; <!-- Eye icon -->
+                    </span>
+                </div>
+            {% else %}
+                {{ field }}
+            {% endif %}
+            {% if field.help_text %}
+                <small style="color: gray;">{{ field.help_text }}</small>
+            {% endif %}
+            {% for error in field.errors %}
+                <p style="color: red;">{{ error }}</p>
+            {% endfor %}
+        </p>
+    {% endfor %}
+    <button type="submit">Log In</button>
+</form>
+<p><a href="{% url 'password_reset' %}">Forgot password?</a></p>
+
+<script>
+    const togglePassword = document.querySelector('#togglePassword');
+    const passwordInput = document.querySelector('#id_password'); // Default ID for password field
+
+    if (togglePassword && passwordInput) {
+        togglePassword.addEventListener('click', function (e) {
+            // toggle the type attribute
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            // toggle the eye slash icon
+            this.innerHTML = (type === 'password') ? '&#128065;' : '&#128064;'; // Eye or Eye with slash
+        });
+    }
+</script>

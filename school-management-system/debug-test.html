@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Test</title>
+</head>
+<body>
+    <h1>API Test</h1>
+    <button onclick="testLogin()">Test Login</button>
+    <button onclick="testMe()">Test /auth/me/</button>
+    <div id="output" style="white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; margin-top: 20px;"></div>
+    
+    <script>
+    const output = document.getElementById('output');
+    
+    async function testLogin() {
+        try {
+            // Get CSRF token
+            const csrfRes = await fetch('http://127.0.0.1:8000/api/auth/csrf/');
+            const csrfData = await csrfRes.json();
+            const csrfToken = csrfData.csrfToken;
+            
+            // Login
+            const loginRes = await fetch('http://127.0.0.1:8000/api/auth/login/', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ identifier: 'admin', password: 'admin' })
+            });
+            
+            const loginData = await loginRes.json();
+            output.textContent = 'Login Response:\n' + JSON.stringify(loginData, null, 2);
+            
+            if (loginData.user && loginData.user.profile) {
+                output.textContent += '\n\nProfile found: ' + loginData.user.profile.role;
+            } else {
+                output.textContent += '\n\nWARNING: Profile not in login response!';
+            }
+        } catch (e) {
+            output.textContent = 'Error: ' + e.message;
+        }
+    }
+    
+    async function testMe() {
+        try {
+            const res = await fetch('http://127.0.0.1:8000/api/auth/me/', {
+                credentials: 'include'
+            });
+            const data = await res.json();
+            output.textContent = '/auth/me/ Response:\n' + JSON.stringify(data, null, 2);
+            
+            if (data.profile) {
+                output.textContent += '\n\nProfile found: ' + data.profile.role;
+            } else {
+                output.textContent += '\n\nWARNING: Profile not in response!';
+            }
+        } catch (e) {
+            output.textContent = 'Error: ' + e.message;
+        }
+    }
+    </script>
+</body>
+</html>

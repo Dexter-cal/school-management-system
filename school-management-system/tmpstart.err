@@ -1,0 +1,33 @@
+INFO Watching for file changes with StatReloader
+INFO C:\Users\n\Desktop\school-management-system-\school-management-system\school\utils.py changed, reloading.
+INFO Watching for file changes with StatReloader
+INFO C:\Users\n\Desktop\school-management-system-\school-management-system\school\utils.py changed, reloading.
+INFO Watching for file changes with StatReloader
+INFO C:\Users\n\Desktop\school-management-system-\school-management-system\school\utils.py changed, reloading.
+INFO Watching for file changes with StatReloader
+INFO C:\Users\n\Desktop\school-management-system-\school-management-system\school\views.py changed, reloading.
+INFO Watching for file changes with StatReloader
+INFO C:\Users\n\Desktop\school-management-system-\school-management-system\school\views.py changed, reloading.
+INFO Watching for file changes with StatReloader
+INFO C:\Users\n\Desktop\school-management-system-\school-management-system\school\views.py changed, reloading.
+INFO Watching for file changes with StatReloader
+INFO C:\Users\n\Desktop\school-management-system-\school-management-system\school\serializers.py changed, reloading.
+INFO Watching for file changes with StatReloader
+'Bootstrapping' is not recognized as an internal or external command,
+operable program or batch file.
+INFO Watching for file changes with StatReloader
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO - Broken pipe from ('127.0.0.1', 55140)
+INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
+INFO "POST /api/auth/login/ HTTP/1.1" 200 528
+INFO "GET /api/auth/me/ HTTP/1.1" 200 498
+INFO "GET /api/students/ HTTP/1.1" 200 3368
+INFO "GET /api/classes/ HTTP/1.1" 200 584
+INFO "GET /api/notifications/ HTTP/1.1" 200 701
+WARNING Forbidden: /api/document-drafts/
+WARNING "POST /api/document-drafts/ HTTP/1.1" 403 82
+WARNING Not Found: /api/document-drafts//preview-merge/
+WARNING "POST /api/document-drafts//preview-merge/ HTTP/1.1" 404 143102
+INFO - Broken pipe from ('127.0.0.1', 63425)
+INFO C:\Users\n\Desktop\school-management-system-\school-management-system\school\serializers.py changed, reloading.
+INFO Watching for file changes with StatReloader
