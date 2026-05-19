@@ -39,6 +39,9 @@ if not exist .env (
     echo TWILIO_AUTH_TOKEN=your_auth_token >> .env
     echo TWILIO_PHONE_NUMBER=+15017122661 >> .env
     echo DEFAULT_FROM_EMAIL=webmaster@bitendejuniorschool.com >> .env
+    echo BOOTSTRAP_SUPERADMIN=False >> .env
+    echo BOOTSTRAP_SUPERADMIN_USERNAME=admin >> .env
+    echo BOOTSTRAP_SUPERADMIN_EMAIL=admin@example.com >> .env
     echo.
     echo IMPORTANT: Please edit the .env file with your production credentials, Twilio settings, and allowed hosts.
     echo Then run start.bat again.

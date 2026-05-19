@@ -3,6 +3,7 @@ services:
     name: school-management-system
     env: python
     plan: free
+    root: school-management-system
     branch: master
     autoDeploy: true
     buildCommand: pip install -r requirements.txt
@@ -15,7 +16,7 @@ services:
       - key: ALLOWED_HOSTS
         value: '127.0.0.1,localhost'
       - key: BOOTSTRAP_SUPERADMIN
-        value: 'True'
+        value: 'False'
       - key: BOOTSTRAP_SUPERADMIN_USERNAME
         value: 'admin'
       - key: BOOTSTRAP_SUPERADMIN_PASSWORD

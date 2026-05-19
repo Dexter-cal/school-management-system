@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 from decouple import config  # Added for environment variables
 import os  # Added for path operations
 
@@ -70,6 +71,12 @@ DEV_FALLBACK_SECRET_KEY = "bjs-dev-only-6f5aa0fb9f1a4f6a8c8b2ea5c7c1f34a4c217d5f
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY', default=DEV_FALLBACK_SECRET_KEY) # Using decouple
+
+if not DEBUG and SECRET_KEY == DEV_FALLBACK_SECRET_KEY:
+    raise ImproperlyConfigured(
+        'A production SECRET_KEY must be set in the environment. '
+        'Do not use the development fallback secret in production.'
+    )
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost', cast=lambda v: [s.strip() for s in v.split(',') if s.strip()])
 if DEBUG:
