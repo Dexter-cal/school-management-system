@@ -137,6 +137,7 @@ class StudentSerializer(serializers.ModelSerializer):
     current_class_level = serializers.CharField(source='current_class.level', read_only=True)
     class_teacher = serializers.SerializerMethodField(read_only=True)
     parent_email = serializers.SerializerMethodField(read_only=True)
+    photo_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Student
@@ -183,6 +184,12 @@ class StudentSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return None
+
+    def get_photo_url(self, obj):
+        try:
+            return obj.photo.url if obj.photo else None
+        except Exception:
+            return None
 
 class FeeStructureSerializer(serializers.ModelSerializer):
     class Meta:

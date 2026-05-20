@@ -400,9 +400,39 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
 .comms-campaign-card .title{font-weight:900;color:var(--1a);margin-bottom:5px}
 .comms-campaign-card .meta{font-size:12px;color:var(--66);margin-bottom:8px}
 .comms-actions{display:flex;gap:8px;flex-wrap:wrap}
+.comms-home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.comms-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.comms-action-card{border:1px solid #e4d8c9;border-radius:18px;background:linear-gradient(180deg,#fffdf9,#fff);padding:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start;text-align:left;cursor:pointer;transition:var(--trans);box-shadow:var(--shadow)}
+.comms-action-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.comms-action-card h3{font-size:16px;line-height:1.25;color:var(--md)}
+.comms-action-card p{font-size:12px;color:var(--66);line-height:1.6}
+.comms-editor-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}
+.comms-editor-page .comms-studio{min-height:100%}
+.comms-editor-page .comms-toolbar{position:sticky;top:0;z-index:4;backdrop-filter:blur(8px)}
+.field-inline-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.parent-match-card{width:100%;display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:14px;border:1px solid var(--e);background:#fff;text-align:left;cursor:pointer;transition:var(--trans);font-family:'Outfit',sans-serif}
+.parent-match-card:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+.parent-match-card span{font-size:12px;color:var(--66)}
+.parent-match-selected{border:1px solid rgba(27,94,32,.2);background:var(--grl);border-radius:14px;padding:12px 14px}
+.tutorial-kicker{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:var(--m)}
+.tutorial-card{border:1px solid #e4d8c9;border-radius:18px;background:linear-gradient(180deg,#fffdf9,#fff);padding:16px}
+.tutorial-body{font-size:14px;line-height:1.7;color:var(--66);margin-top:8px}
+.tutorial-list{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.tutorial-step{border:1px solid var(--e);border-radius:14px;background:#fff;padding:10px 12px;display:flex;align-items:center;gap:10px;text-align:left;cursor:pointer;transition:var(--trans);font-family:'Outfit',sans-serif}
+.tutorial-step span{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--f0);font-weight:900;color:var(--66);flex-shrink:0}
+.tutorial-step strong{font-size:13px;color:var(--1a)}
+.tutorial-step.active{border-color:rgba(122,0,0,.22);background:var(--mll)}
+.tutorial-step.active span{background:var(--m);color:#fff}
+.notif-summary{padding:10px 12px;border-bottom:1px solid var(--f0);background:var(--f8);display:none}
+.notif-summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.notif-summary-card{border:1px solid var(--e);border-radius:12px;background:#fff;padding:10px 12px}
+.notif-summary-card .k{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--99);margin-bottom:4px}
+.notif-summary-card .v{font-size:15px;font-weight:900;color:var(--md)}
+.notif-summary-chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 
 @media(max-width:1280px){
   .comms-shell{grid-template-columns:1fr}
+  .comms-home-grid,.comms-editor-layout{grid-template-columns:1fr}
   .comms-paper{max-width:100%}
 }
 
@@ -417,6 +447,7 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
   .topbar-center{display:none}
   .grid-2{grid-template-columns:1fr}
   .kv-grid{grid-template-columns:1fr}
+  .comms-action-grid{grid-template-columns:1fr}
 }
 
 @media(max-width:640px){
@@ -426,11 +457,28 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
   .tb-user-name{display:none}
   .modal-overlay{align-items:flex-end;padding:0}
   .modal{border-radius:16px 16px 0 0;max-height:88vh}
+  .notif-summary-grid{grid-template-columns:1fr}
 }
 
 @media(max-width:420px){
   .login-card{padding:22px 18px}
   .page-title{font-size:26px}
+}
+</style>
+<style>
+/* Extra small tweaks for mobile to ensure hamburger visible and compact layout */
+@media (max-width:900px) {
+  .app-topbar .hamburger { display:flex !important; }
+  .app-topbar-logo .crest { width:32px; height:32px; }
+  .school-name { display:none; }
+  .topbar-center { display:none; }
+  .login-card { max-width:360px; padding:28px 20px; }
+  body { font-size:15px; }
+}
+@media (max-width:480px) {
+  .login-card { max-width:320px; padding:20px 14px; }
+  .app-topbar { padding:0 12px; }
+  .tb-user-name { display:none; }
 }
 </style>
 </head>
@@ -459,8 +507,8 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
     <div class="login-error" id="login-error"></div>
 
     <div id="login-form">
-      <div class="form-field"><label>Username, Email or Phone</label><input class="form-input" id="login-user" type="text" placeholder="admin / 0701234567 / name@gmail.com" autocomplete="username"></div>
-      <div class="form-field"><label>Password</label><input class="form-input" id="login-pass" type="password" autocomplete="current-password"></div>
+      <div class="form-field"><label>Username, Email or Phone</label><input class="form-input" id="login-user" type="text" placeholder="e.g. username123 / 0701234567 / name@gmail.com" autocomplete="username"></div>
+      <div class="form-field pw-wrap"><label>Password</label><input class="form-input" id="login-pass" type="password" autocomplete="current-password"><button class="pw-toggle" type="button" onclick="togglePasswordVisibility('login-pass', this)">👁</button></div>
       <button class="login-btn" type="button" id="login-btn" onclick="doLogin()">Sign In -></button>
       <div class="login-links"><a href="javascript:void(0)" onclick="showForgot()">Forgot password?</a></div>
     </div>
@@ -535,6 +583,7 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
       <button class="btn btn-xs btn-ghost" onclick="clearNotificationFilters()">Reset</button>
     </div>
   </div>
+  <div id="notif-summary" class="notif-summary"></div>
   <div id="notif-list" style="flex:1;overflow-y:auto"></div>
 </div>
 
@@ -563,14 +612,22 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
     <div class="modal-head"><div class="modal-title">Create New User Account</div><button onclick="closeModal('modal-user')">X</button></div>
     <div class="modal-body">
       <input type="hidden" id="u-id">
-      <div class="field"><label>Username</label><input class="field-input" id="u-username"></div>
+      <div class="field">
+        <label>Username</label>
+        <div class="field-inline-row">
+          <input class="field-input" id="u-username" placeholder="Leave blank to auto-create an easy username" style="flex:1;min-width:220px">
+          <button class="btn btn-xs btn-ghost" type="button" onclick="applySuggestedUserUsername()">Suggest</button>
+        </div>
+        <div class="sub" id="u-un-preview">Recommended: <strong>...</strong></div>
+      </div>
       <div class="field"><label>Password</label>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <div class="field-inline-row">
           <select class="field-select" id="u-pw-mode" style="min-width:210px" onchange="toggleUserPasswordMode()">
             <option value="auto">Auto-generate temporary password</option>
             <option value="manual">Set temporary password manually</option>
           </select>
           <input class="field-input" id="u-password" type="password" placeholder="Min 10 chars, upper/lower/number/symbol" style="min-width:220px;display:none">
+          <button class="btn btn-xs btn-ghost" type="button" onclick="suggestStrongPasswordFor('u-password','u-pw-mode','User password')">Suggest strong password</button>
         </div>
         <div class="sub">User will be reminded to change password after first login. Manual passwords must be strong.</div>
       </div>
@@ -605,12 +662,13 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
       <div class="field"><label>Phone</label><input class="field-input" id="t-ph" type="tel" placeholder="0701234567"></div>
       <div class="field"><label>Email</label><input class="field-input" id="t-em" type="email" placeholder="name@gmail.com"></div>
       <div class="field"><label>Password</label>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <div class="field-inline-row">
           <select class="field-select" id="t-pw-mode" style="min-width:210px" onchange="toggleTeacherPasswordMode()">
             <option value="auto">Auto-generate temporary password</option>
             <option value="manual">Set temporary password manually</option>
           </select>
           <input class="field-input" id="t-pw" type="password" placeholder="Min 10 chars, upper/lower/number/symbol" style="min-width:220px;display:none">
+          <button class="btn btn-xs btn-ghost" type="button" onclick="suggestStrongPasswordFor('t-pw','t-pw-mode','Teacher password')">Suggest strong password</button>
         </div>
         <div class="sub">Teacher will be reminded to change password after first login. Manual passwords must be strong.</div>
       </div>
@@ -681,21 +739,23 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
         <summary style="cursor:pointer;font-weight:700;color:var(--m)">Account Credentials (optional)</summary>
         <div style="height:10px"></div>
         <div class="field"><label>Parent Portal Password</label>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div class="field-inline-row">
             <select class="field-select" id="s-ppw-mode" style="min-width:210px" onchange="toggleStudentPasswordMode()">
               <option value="auto">Auto-generate temporary password</option>
               <option value="manual">Set temporary password manually</option>
             </select>
             <input class="field-input" id="s-ppw" type="password" placeholder="Min 10 chars, upper/lower/number/symbol" style="min-width:220px;display:none">
+            <button class="btn btn-xs btn-ghost" type="button" onclick="suggestStrongPasswordFor('s-ppw','s-ppw-mode','Parent password')">Suggest strong password</button>
           </div>
         </div>
         <div class="field"><label>Student Portal Password</label>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div class="field-inline-row">
             <select class="field-select" id="s-spw-mode" style="min-width:210px" onchange="toggleStudentPasswordMode()">
               <option value="auto">Auto-generate temporary password</option>
               <option value="manual">Set temporary password manually</option>
             </select>
             <input class="field-input" id="s-spw" type="password" placeholder="Min 10 chars, upper/lower/number/symbol" style="min-width:220px;display:none">
+            <button class="btn btn-xs btn-ghost" type="button" onclick="suggestStrongPasswordFor('s-spw','s-spw-mode','Student password')">Suggest strong password</button>
           </div>
           <div class="sub">Passwords are never stored in plain text. Manual passwords must be at least 10 characters and include uppercase, lowercase, a number, and a symbol. If lost, use Reset Portals.</div>
         </div>
@@ -1011,6 +1071,15 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
 </div>
 
 <!-- Cache-bust to avoid stale SPA JS after deployments/edits. -->
-<script src="{% static 'school/js/app.js' %}?v=20260412c" defer></script>
+<script src="{% static 'school/js/app.js' %}?v=20260519b" defer></script>
+<script>
+  function togglePasswordVisibility(fieldId, btn) {
+    const input = document.getElementById(fieldId);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    btn.textContent = isPassword ? '🙈' : '👁';
+  }
+</script>
 </body>
 </html>

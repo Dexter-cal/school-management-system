@@ -9,3 +9,7 @@ twilio
 python-decouple
 gunicorn
 qrcode # Added for QR code generation
+whitenoise
+dj-database-url
+psycopg2-binary
+django-storages[boto3]

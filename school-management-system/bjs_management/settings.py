@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from importlib import import_module
 from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 from decouple import config  # Added for environment variables
@@ -106,6 +107,12 @@ INSTALLED_APPS = [
     # 'debug_toolbar', # Optional: for development debugging
 ]
 
+try:
+    import whitenoise  # type: ignore  # noqa: F401
+    HAS_WHITENOISE = True
+except Exception:
+    HAS_WHITENOISE = False
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -117,6 +124,9 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+if HAS_WHITENOISE:
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 
 ROOT_URLCONF = "bjs_management.urls"
 
@@ -148,6 +158,16 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
+
+# Allow overriding the DATABASE via DATABASE_URL (e.g., Render/Heroku)
+database_url = config("DATABASE_URL", default=None)
+if database_url:
+    try:
+        dj_database_url = import_module("dj_database_url")
+        DATABASES["default"] = dj_database_url.parse(database_url, conn_max_age=600)
+    except Exception:
+        # dj-database-url not installed or parse failed; fall back to sqlite.
+        pass
 
 
 # Password validation
@@ -191,8 +211,30 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Use compressed manifest storage in production for better caching and integrity
+if not DEBUG and HAS_WHITENOISE:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Optional: support S3 media storage when `USE_S3` is enabled in the environment.
+USE_S3 = env_bool('USE_S3', default=False)
+if USE_S3:
+    try:
+        # Lazy import to avoid hard dependency when not used
+        from storages.backends.s3boto3 import S3Boto3Storage  # type: ignore
+
+        AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='')
+        AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='')
+        AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default='')
+        AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='')
+
+        DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+    except Exception:
+        # If django-storages is not installed, fall back to local media but log a warning.
+        import warnings
+        warnings.warn('USE_S3 is true but django-storages is not available; falling back to local MEDIA_ROOT.')
 
 
 # Keep CORS permissive for dev; production should be set explicitly via CORS_ALLOWED_ORIGINS.

@@ -42,7 +42,7 @@ from .utils import (
     generate_report_card_pdf, generate_payment_receipt_pdf, generate_fee_statement_pdf,
     generate_mail_merge_letter_pdf,
     _safe_format_template,
-    sanitize_rich_text_html, rich_text_to_plain_text,
+    sanitize_rich_text_html, rich_text_to_plain_text, get_active_api_credential,
     generate_deposit_batch_report_pdf, generate_cashbook_close_pdf, generate_cashier_handover_pdf,  # Added new utility functions
 )
 from django.shortcuts import render
@@ -72,12 +72,89 @@ import logging
 import re
 import base64
 import io
+import zipfile
 import qrcode
 import uuid
+from PIL import Image, UnidentifiedImageError
 logger = logging.getLogger(__name__)
 
 def _truthy(v):
     return str(v or '').strip().lower() in ('1', 'true', 'yes', 'y', 'on')
+
+
+def _is_placeholder_twilio_sid(value):
+    value = str(value or '').strip()
+    return (not value) or value == 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+
+
+def _is_placeholder_twilio_secret(value):
+    value = str(value or '').strip()
+    return (not value) or value == 'your_auth_token'
+
+
+def _is_placeholder_twilio_number(value):
+    value = str(value or '').strip()
+    return (not value) or value == '+15017122661'
+
+
+def _email_transport_meta():
+    smtp_cred = get_active_api_credential('gmail_smtp') or get_active_api_credential('email_smtp')
+    if smtp_cred:
+        return {
+            'email_transport': smtp_cred.get_service_name_display(),
+            'email_delivery_mode': 'live-smtp',
+            'email_live_ready': True,
+        }
+
+    backend = str(getattr(settings, 'EMAIL_BACKEND', '') or '').strip()
+    if backend == 'django.core.mail.backends.console.EmailBackend':
+        return {
+            'email_transport': 'Django Console Backend',
+            'email_delivery_mode': 'console',
+            'email_live_ready': False,
+        }
+    if backend == 'django.core.mail.backends.smtp.EmailBackend':
+        return {
+            'email_transport': 'Django SMTP Backend',
+            'email_delivery_mode': 'django-smtp',
+            'email_live_ready': True,
+        }
+    return {
+        'email_transport': backend or 'Not configured',
+        'email_delivery_mode': 'unknown',
+        'email_live_ready': False,
+    }
+
+
+def _sms_transport_meta():
+    meg = get_active_api_credential('megasms')
+    if meg and (meg.api_key or '').strip():
+        return {
+            'sms_transport': meg.get_service_name_display(),
+            'sms_delivery_mode': 'live-api',
+            'sms_live_ready': True,
+        }
+
+    twilio_cred = get_active_api_credential('twilio_sms')
+    if twilio_cred:
+        sid = (twilio_cred.client_id or '').strip()
+        token = (twilio_cred.client_secret or '').strip()
+        from_number = ((twilio_cred.extra_data or {}).get('from_number') or '').strip()
+    else:
+        sid = str(getattr(settings, 'TWILIO_ACCOUNT_SID', '') or '').strip()
+        token = str(getattr(settings, 'TWILIO_AUTH_TOKEN', '') or '').strip()
+        from_number = str(getattr(settings, 'TWILIO_PHONE_NUMBER', '') or '').strip()
+
+    live_ready = not (
+        _is_placeholder_twilio_sid(sid)
+        or _is_placeholder_twilio_secret(token)
+        or _is_placeholder_twilio_number(from_number)
+    )
+    return {
+        'sms_transport': 'Twilio SMS',
+        'sms_delivery_mode': 'live-api' if live_ready else 'unconfigured',
+        'sms_live_ready': bool(live_ready),
+    }
 
 def _handover_cache_key(kind, obj_id, token):
     return f"handover:{kind}:{obj_id}:{token}"
@@ -243,6 +320,36 @@ def notify_roles(
         ):
             n += 1
     return n
+
+
+def _normalize_username_part(value):
+    cleaned = re.sub(r'[^a-z0-9]+', '.', str(value or '').strip().lower())
+    cleaned = re.sub(r'\.+', '.', cleaned).strip('.')
+    return cleaned
+
+
+def _recommended_username(first_name='', last_name='', role='user'):
+    first = _normalize_username_part(first_name)
+    last = _normalize_username_part(last_name)
+    if first and last:
+        base = f'{first}.{last}'
+    else:
+        base = first or last or _normalize_username_part(role) or 'user'
+    base = base[:30].strip('.')
+    return base or 'user'
+
+
+def _unique_username(base, fallback='user'):
+    root = (_normalize_username_part(base) or _normalize_username_part(fallback) or 'user')[:30].strip('.')
+    root = root or 'user'
+    candidate = root
+    counter = 2
+    while User.objects.filter(username=candidate).exists():
+        suffix = f'.{counter}'
+        trimmed = root[: max(1, 30 - len(suffix))].rstrip('.')
+        candidate = f'{trimmed}{suffix}'
+        counter += 1
+    return candidate
 
 
 class IsSuperUser(permissions.BasePermission):
@@ -1199,6 +1306,21 @@ def _build_portal_bundle_context(student, request, parent_email=None, parent_pas
     }
 
 
+def _build_staff_portal_bundle_context(*, request, display_name, role_label, username, password, email=None, phone=None):
+    login_url = request.build_absolute_uri('/')
+    return {
+        'display_name': display_name or username,
+        'role_label': role_label,
+        'username': username,
+        'password': password,
+        'login_url': login_url,
+        'email_address': email or '',
+        'phone_number': phone or '',
+        'password_reset_supported': True,
+        'support_phone': phone or '',
+    }
+
+
 def _send_parent_portal_bundle(request, student, *, parent_email=None, parent_password=None, student_username=None, student_password=None, subject, mode_label):
     context = _build_portal_bundle_context(
         student,
@@ -1209,10 +1331,18 @@ def _send_parent_portal_bundle(request, student, *, parent_email=None, parent_pa
         student_password=student_password,
     )
     context['mode_label'] = mode_label
-    delivery = {'email_sent': False, 'sms_sent': False}
+    delivery = {
+        'email_sent': False,
+        'sms_sent': False,
+        'email_attempted': False,
+        'sms_attempted': False,
+        **_email_transport_meta(),
+        **_sms_transport_meta(),
+    }
 
     email_enabled = bool(get_system_setting('send_credentials_email', True))
     if email_enabled and parent_email:
+        delivery['email_attempted'] = True
         delivery['email_sent'] = bool(send_email(
             subject=subject,
             recipient_list=[parent_email],
@@ -1222,6 +1352,7 @@ def _send_parent_portal_bundle(request, student, *, parent_email=None, parent_pa
 
     sms_enabled = bool(get_system_setting('send_credentials_sms', True))
     if sms_enabled and student.parent_phone:
+        delivery['sms_attempted'] = True
         sms_lines = [
             f"Bitende Junior School {mode_label.lower()}:",
             f"Parent login phone: {student.parent_phone}",
@@ -1240,6 +1371,67 @@ def _send_parent_portal_bundle(request, student, *, parent_email=None, parent_pa
         sms_lines.append("Login: " + context['login_url'])
         try:
             delivery['sms_sent'] = bool(send_sms(student.parent_phone, " | ".join(sms_lines)))
+        except Exception:
+            delivery['sms_sent'] = False
+
+    return context, delivery
+
+
+def _send_staff_portal_bundle(
+    request,
+    *,
+    display_name,
+    role_label,
+    username,
+    password,
+    email=None,
+    phone=None,
+    subject,
+    mode_label,
+):
+    context = _build_staff_portal_bundle_context(
+        request=request,
+        display_name=display_name,
+        role_label=role_label,
+        username=username,
+        password=password,
+        email=email,
+        phone=phone,
+    )
+    context['mode_label'] = mode_label
+    delivery = {
+        'email_sent': False,
+        'sms_sent': False,
+        'email_attempted': False,
+        'sms_attempted': False,
+        **_email_transport_meta(),
+        **_sms_transport_meta(),
+    }
+
+    email_enabled = bool(get_system_setting('send_credentials_email', True))
+    if email_enabled and email:
+        delivery['email_attempted'] = True
+        delivery['email_sent'] = bool(send_email(
+            subject=subject,
+            recipient_list=[email],
+            template_name='school/emails/staff_credentials_email.html',
+            context=context,
+        ))
+
+    sms_enabled = bool(get_system_setting('send_credentials_sms', True))
+    if sms_enabled and phone:
+        delivery['sms_attempted'] = True
+        sms_lines = [
+            f"Bitende Junior School {mode_label.lower()}:",
+            f"Role: {role_label}",
+            f"Username: {username}",
+            f"Temporary password: {password}",
+            f"Login: {context['login_url']}",
+            "Change password after first login.",
+            "Reset password using the registered phone/email if forgotten.",
+        ]
+        try:
+            delivery['sms_sent'] = bool(send_sms(phone, " | ".join(sms_lines)))
         except Exception:
             delivery['sms_sent'] = False
 
@@ -1340,14 +1532,11 @@ class TeacherViewSet(viewsets.ModelViewSet):
             id_counter.save()
             employee_id = f"T{id_counter.current_count:03d}" # T001, T002, etc.
 
-            # Generate Username (first initial + last name lowercase)
-            username = f"{first_name[0]}{last_name}".lower()
-            # Ensure uniqueness for username
-            original_username = username
-            counter = 1
-            while User.objects.filter(username=username).exists():
-                username = f"{original_username}{counter}"
-                counter += 1
+            # Generate a readable username and keep it unique.
+            username = _unique_username(
+                _recommended_username(first_name=first_name, last_name=last_name, role='teacher'),
+                fallback='teacher',
+            )
 
             # Generate or accept a temporary password (never stored in plain text; only returned once).
             if password_mode == 'manual':
@@ -1389,22 +1578,25 @@ class TeacherViewSet(viewsets.ModelViewSet):
 
             # Send credentials (Email/SMS) and issue a short-lived print token for handover.
             login_url = request.build_absolute_uri('/') # Adjust as needed for your frontend login page
-            email_enabled = bool(get_system_setting('send_credentials_email', True))
-            sms_enabled = bool(get_system_setting('send_credentials_sms', True))
-
-            if email and email_enabled:
-                send_email(
-                    subject='Your Bitende Junior School login details',
-                    recipient_list=[email],
-                    template_name='school/emails/teacher_credentials_email.html',
-                    context={'teacher_name': f'{first_name} {last_name}', 'username': username, 'password': temporary_password, 'login_url': login_url}
-                )
-            if phone and sms_enabled:
-                try:
-                    send_sms(phone, f"Bitende Junior School teacher login: {username} / {temporary_password} | Login: {login_url} | Change password after login.")
-                    SecurityAuditLog.objects.create(user=request.user, event_type='CREDENTIALS_SMS_SENT', ip_address=get_client_ip(request), details=f'Teacher credentials SMS sent to {phone} for {username}.')
-                except Exception as e:
-                    SecurityAuditLog.objects.create(user=request.user, event_type='CREDENTIALS_SMS_FAILED', ip_address=get_client_ip(request), details=f'Failed to send teacher credentials SMS to {phone} for {username}: {e}')
+            _, delivery = _send_staff_portal_bundle(
+                request,
+                display_name=f'{first_name} {last_name}'.strip() or username,
+                role_label='Teacher',
+                username=username,
+                password=temporary_password,
+                email=email,
+                phone=phone,
+                subject='Your Bitende Junior School login details',
+                mode_label='Teacher account setup',
+            )
+            if delivery['email_sent']:
+                SecurityAuditLog.objects.create(user=request.user, event_type='CREDENTIALS_EMAIL_SENT', ip_address=get_client_ip(request), details=f'Teacher credentials email sent to {email} for {username}.')
+            elif delivery['email_attempted']:
+                SecurityAuditLog.objects.create(user=request.user, event_type='CREDENTIALS_EMAIL_FAILED', ip_address=get_client_ip(request), details=f'Failed to send teacher credentials email to {email} for {username}.')
+            if delivery['sms_sent']:
+                SecurityAuditLog.objects.create(user=request.user, event_type='CREDENTIALS_SMS_SENT', ip_address=get_client_ip(request), details=f'Teacher credentials SMS sent to {phone} for {username}.')
+            elif delivery['sms_attempted']:
+                SecurityAuditLog.objects.create(user=request.user, event_type='CREDENTIALS_SMS_FAILED', ip_address=get_client_ip(request), details=f'Failed to send teacher credentials SMS to {phone} for {username}.')
 
             token = _issue_handover_token('teacher', teacher_instance.id, { 
                 'username': username, 
@@ -1432,9 +1624,39 @@ class TeacherViewSet(viewsets.ModelViewSet):
                     details=f'Failed to enqueue teacher credentials for teacher_id={teacher_instance.id}: {e}', 
                 ) 
 
-            SecurityAuditLog.objects.create(user=request.user, event_type='TEACHER_REGISTERED', ip_address=get_client_ip(request), details=f'Teacher {first_name} {last_name} ({employee_id}) registered by {request.user.username}.') 
+            SecurityAuditLog.objects.create(user=request.user, event_type='TEACHER_REGISTERED', ip_address=get_client_ip(request), details=f'Teacher {first_name} {last_name} ({employee_id}) registered by {request.user.username}.')
+            try:
+                notify_roles(
+                    list(dict.fromkeys(['superadmin', 'reception'] + ADMIN_ROLE_LIST)),
+                    category='system',
+                    title='Teacher registered',
+                    message=f'{first_name} {last_name} was added as a teacher account.',
+                    link_page='teachers',
+                    link_object_id=teacher_instance.id,
+                    meta={'teacher_id': teacher_instance.id, 'username': username, 'employee_id': employee_id},
+                    event_key=f'teacher_registered:{teacher_instance.id}',
+                )
+                notify_user(
+                    user,
+                    category='system',
+                    title='Your teacher account is ready',
+                    message='Your portal account has been created. Use the issued credentials to sign in and change your password on first login.',
+                    link_page='dashboard',
+                    link_object_id=teacher_instance.id,
+                    meta={'username': username, 'employee_id': employee_id},
+                    force=True,
+                    event_key=f'teacher_account_ready:{teacher_instance.id}',
+                )
+            except Exception:
+                pass
             data = dict(TeacherSerializer(teacher_instance).data)
-            data['credentials'] = {'username': username, 'temp_password': temporary_password}
+            data['credentials'] = {
+                'username': username,
+                'temp_password': temporary_password,
+                'email_address': email,
+                'phone_number': phone,
+            }
+            data['delivery'] = delivery
             data['handover'] = {
                 'token': token,
                 'expires_minutes': 15,
@@ -1881,6 +2103,7 @@ class StudentViewSet(viewsets.ModelViewSet):
         parent_manual_password = request.data.get('parent_password')
         student_password_mode = (request.data.get('student_password_mode') or 'auto').strip().lower()
         student_manual_password = request.data.get('student_password')
+        photo_url = request.data.get('photo_url')
         student_data = request.data.copy()
         # `parent_email` is used for creating/updating the parent portal profile, but Student has no such field.
         student_data.pop('parent_email', None)
@@ -1889,6 +2112,7 @@ class StudentViewSet(viewsets.ModelViewSet):
         student_data.pop('student_password_mode', None)
         student_data.pop('student_password', None)
         student_data.pop('existing_parent_user', None)
+        student_data.pop('photo_url', None)
 
         if parent_password_mode not in ['auto', 'manual']:
             return Response({'detail': 'parent_password_mode must be auto or manual.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1977,6 +2201,11 @@ class StudentViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(data=student_data)
             serializer.is_valid(raise_exception=True)
             student_instance = serializer.save(student_id=student_id)
+            if photo_url is not None:
+                try:
+                    _apply_uploaded_media_to_field(student_instance, 'photo', photo_url)
+                except ValidationError as e:
+                    return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
             # Always create an explicit guardian link for the parent account to this student.
             # This makes "one parent account, many children" work even if phone numbers change later.
@@ -2080,6 +2309,47 @@ class StudentViewSet(viewsets.ModelViewSet):
                 )
             
             SecurityAuditLog.objects.create(user=request.user, event_type='STUDENT_REGISTERED', ip_address=get_client_ip(request), details=f'Student {student_instance.first_name} {student_instance.last_name} ({student_instance.student_id}) registered by {request.user.username}.')
+            try:
+                notify_roles(
+                    list(dict.fromkeys(['superadmin', 'reception', 'bursar'] + ADMIN_ROLE_LIST)),
+                    category='system',
+                    title='Student registered',
+                    message=f'{student_instance.first_name} {student_instance.last_name} joined {getattr(getattr(student_instance, "current_class", None), "level", "school")} {student_instance.section}.',
+                    link_page='students',
+                    link_object_id=student_instance.id,
+                    student=student_instance,
+                    school_class=getattr(student_instance, 'current_class', None),
+                    meta={'student_id': student_instance.id, 'student_system_id': student_instance.student_id},
+                    event_key=f'student_registered:{student_instance.id}',
+                )
+                notify_user(
+                    parent_user,
+                    category='system',
+                    title='Student registration complete',
+                    message=f'{student_instance.first_name} {student_instance.last_name} has been linked to your parent portal.',
+                    link_page='profile',
+                    link_object_id=student_instance.id,
+                    student=student_instance,
+                    school_class=getattr(student_instance, 'current_class', None),
+                    meta={'student_system_id': student_instance.student_id},
+                    force=True,
+                    event_key=f'parent_student_registered:{student_instance.id}:{parent_user.id}',
+                )
+                notify_user(
+                    student_user,
+                    category='system',
+                    title='Your student portal is ready',
+                    message='Your school portal account has been created. Sign in using the issued credentials and change your password after first login.',
+                    link_page='dashboard',
+                    link_object_id=student_instance.id,
+                    student=student_instance,
+                    school_class=getattr(student_instance, 'current_class', None),
+                    meta={'student_system_id': student_instance.student_id},
+                    force=True,
+                    event_key=f'student_portal_ready:{student_instance.id}',
+                )
+            except Exception:
+                pass
             headers = self.get_success_headers(serializer.data)
             data = dict(serializer.data)
             # One-time display for admin/reception to hand over credentials if email isn't used.
@@ -2400,14 +2670,21 @@ class StudentViewSet(viewsets.ModelViewSet):
 
     def update(self, request, *args, **kwargs):
         parent_email = request.data.get('parent_email')
+        photo_url = request.data.get('photo_url')
         data = request.data.copy()
         data.pop('parent_email', None)
+        data.pop('photo_url', None)
 
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
+        if photo_url is not None:
+            try:
+                _apply_uploaded_media_to_field(serializer.instance, 'photo', photo_url)
+            except ValidationError as e:
+                return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         parent_user = self._ensure_parent_portal(
             parent_name=serializer.instance.parent_name,
@@ -3199,10 +3476,14 @@ class UserViewSet(viewsets.ModelViewSet):
         phone_number = (request.data.get('phone_number') or '').strip() or None
         email_address = (request.data.get('email_address') or '').strip().lower() or None
 
-        if not username:
-            return Response({'detail': 'username is required.'}, status=status.HTTP_400_BAD_REQUEST)
         if role in ['student', 'parent']:
             return Response({'detail': "Create student/parent accounts via Students registration (it auto-creates portals)."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not username:
+            username = _unique_username(
+                _recommended_username(first_name=first_name, last_name=last_name, role=role),
+                fallback=role or 'user',
+            )
 
         generated_password = None
         if auto_password:
@@ -3212,6 +3493,10 @@ class UserViewSet(viewsets.ModelViewSet):
             if password is None or str(password).strip() == '':
                 return Response({'detail': 'password is required (or choose auto-generate).'}, status=status.HTTP_400_BAD_REQUEST)
             password = str(password)
+            try:
+                validate_password(password)
+            except ValidationError as e:
+                return Response({'detail': 'Password does not meet security requirements.', 'errors': list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Pre-check common uniqueness conflicts (still keep IntegrityError catch for races).
         if User.objects.filter(username=username).exists():
@@ -3294,9 +3579,82 @@ class UserViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'Username already exists.'}, status=status.HTTP_400_BAD_REQUEST)
             raise
 
+        role_label = (role or 'staff').replace('_', ' ').title()
+        _, delivery = _send_staff_portal_bundle(
+            request,
+            display_name=f"{first_name} {last_name}".strip() or username,
+            role_label=role_label,
+            username=username,
+            password=password,
+            email=email_address,
+            phone=phone_number,
+            subject='Your Bitende Junior School login details',
+            mode_label='Account setup',
+        )
+        if delivery['email_sent']:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='CREDENTIALS_EMAIL_SENT',
+                ip_address=get_client_ip(request),
+                details=f'Staff credentials email sent to {email_address} for {username}.',
+            )
+        elif delivery['email_attempted']:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='CREDENTIALS_EMAIL_FAILED',
+                ip_address=get_client_ip(request),
+                details=f'Failed to send staff credentials email to {email_address} for {username}.',
+            )
+        if delivery['sms_sent']:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='CREDENTIALS_SMS_SENT',
+                ip_address=get_client_ip(request),
+                details=f'Staff credentials SMS sent to {phone_number} for {username}.',
+            )
+        elif delivery['sms_attempted']:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='CREDENTIALS_SMS_FAILED',
+                ip_address=get_client_ip(request),
+                details=f'Failed to send staff credentials SMS to {phone_number} for {username}.',
+            )
+
+        try:
+            notify_roles(
+                list(dict.fromkeys(['superadmin'] + ADMIN_ROLE_LIST)),
+                category='system',
+                title='Staff account created',
+                message=f'{role_label}: {first_name} {last_name}'.strip(': ') + f' ({username}) is ready.',
+                link_page='users',
+                link_object_id=user.id,
+                meta={'user_id': user.id, 'role': role, 'username': username},
+                event_key=f'user_created:{user.id}',
+            )
+            notify_user(
+                user,
+                category='system',
+                title='Your staff account is ready',
+                message='An administrator created your portal account. Sign in with the issued credentials and change your password immediately.',
+                link_page='dashboard',
+                link_object_id=user.id,
+                meta={'role': role, 'username': username},
+                force=True,
+                event_key=f'user_account_ready:{user.id}',
+            )
+        except Exception:
+            pass
+
         data = dict(UserSerializer(user).data)
         if generated_password:
             data['_initial_password'] = generated_password
+        data['credentials'] = {
+            'username': username,
+            'temp_password': password,
+            'email_address': email_address,
+            'phone_number': phone_number,
+        }
+        data['delivery'] = delivery
         data['handover'] = handover
         return Response(data, status=status.HTTP_201_CREATED)
 
@@ -3391,8 +3749,71 @@ class UserViewSet(viewsets.ModelViewSet):
             details=f'Password reset for {user.username} by {request.user.username}.',
         )
 
+        role_label = (getattr(getattr(user, 'profile', None), 'role', None) or 'staff').replace('_', ' ').title()
+        _, delivery = _send_staff_portal_bundle(
+            request,
+            display_name=f"{user.first_name} {user.last_name}".strip() or user.username,
+            role_label=role_label,
+            username=user.username,
+            password=new_password,
+            email=(getattr(getattr(user, 'profile', None), 'email_address', None) or user.email or None),
+            phone=getattr(getattr(user, 'profile', None), 'phone_number', None),
+            subject='Your Bitende Junior School login details',
+            mode_label='Password reset',
+        )
+        if delivery['email_sent']:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='CREDENTIALS_EMAIL_SENT',
+                ip_address=get_client_ip(request),
+                details=f'Staff reset credentials email sent to {user.username}.',
+            )
+        elif delivery['email_attempted']:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='CREDENTIALS_EMAIL_FAILED',
+                ip_address=get_client_ip(request),
+                details=f'Failed to send staff reset credentials email for {user.username}.',
+            )
+        if delivery['sms_sent']:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='CREDENTIALS_SMS_SENT',
+                ip_address=get_client_ip(request),
+                details=f'Staff reset credentials SMS sent for {user.username}.',
+            )
+        elif delivery['sms_attempted']:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='CREDENTIALS_SMS_FAILED',
+                ip_address=get_client_ip(request),
+                details=f'Failed to send staff reset credentials SMS for {user.username}.',
+            )
+
+        try:
+            notify_user(
+                user,
+                category='security',
+                title='Password reset completed',
+                message='Your portal password was reset by an administrator. Use the latest temporary password and change it after signing in.',
+                link_page='dashboard',
+                link_object_id=user.id,
+                meta={'username': user.username},
+                force=True,
+                event_key=f'user_password_reset:{user.id}',
+            )
+        except Exception:
+            pass
+
         resp = UserSerializer(user).data
         resp['_initial_password'] = new_password
+        resp['credentials'] = {
+            'username': user.username,
+            'temp_password': new_password,
+            'email_address': getattr(getattr(user, 'profile', None), 'email_address', None) or user.email or None,
+            'phone_number': getattr(getattr(user, 'profile', None), 'phone_number', None),
+        }
+        resp['delivery'] = delivery
         resp['handover'] = {
             'token': token,
             'expires_minutes': 15,
@@ -5049,7 +5470,19 @@ class APICredentialViewSet(viewsets.ModelViewSet):
                 missing.append('password')
             if missing:
                 return bad('Missing SMTP fields (host/password + extra fields).', {'missing': missing})
-            return ok('SMTP fields present. Live verification not performed here.')
+            use_tls = str(x.get('use_tls') or 'true').strip().lower() not in ('0', 'false', 'no')
+            try:
+                import smtplib
+
+                with smtplib.SMTP(host, int(port), timeout=10) as server:
+                    server.ehlo()
+                    if use_tls:
+                        server.starttls()
+                        server.ehlo()
+                    server.login(username, password)
+                return ok('SMTP login succeeded.', {'host': host, 'port': int(port), 'username': username, 'use_tls': use_tls})
+            except Exception as e:
+                return bad('SMTP live verification failed (network or invalid credentials).', {'error': str(e), 'host': host, 'port': int(port), 'username': username, 'use_tls': use_tls}, code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
         if svc == 'gmail_smtp':
             # Gmail SMTP preset: host/port are standard; require username + app password.
@@ -5058,7 +5491,17 @@ class APICredentialViewSet(viewsets.ModelViewSet):
             password = (cred.client_secret or '').strip()
             if not username or not password:
                 return bad('Missing Gmail SMTP fields.', {'missing': [k for k in ['username', 'app_password'] if (k == 'username' and not username) or (k == 'app_password' and not password)]})
-            return ok('Gmail SMTP fields present. Live verification depends on server internet access.')
+            try:
+                import smtplib
+
+                with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    server.login(username, password)
+                return ok('Gmail SMTP login succeeded.', {'host': 'smtp.gmail.com', 'port': 587, 'username': username})
+            except Exception as e:
+                return bad('Gmail SMTP live verification failed (network or invalid credentials).', {'error': str(e), 'host': 'smtp.gmail.com', 'port': 587, 'username': username}, code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
         if svc == 'megasms':
             x = cred.extra_data or {}
@@ -5391,6 +5834,176 @@ def _ack_url(request, token, event_name):
     return f"{base}/api/communication-deliveries/acknowledge/?token={token}&event={event_name}"
 
 
+def _relative_media_path_from_url(file_url):
+    value = str(file_url or '').strip()
+    if not value:
+        return None
+    media_url = str(getattr(settings, 'MEDIA_URL', '/media/') or '/media/').strip()
+    if '://' in value:
+        return None
+    if value.startswith(media_url):
+        rel = value[len(media_url):]
+    else:
+        rel = value.lstrip('/')
+    rel = rel.strip().replace('\\', '/').lstrip('/')
+    if not rel or '..' in rel.split('/'):
+        return None
+    return rel
+
+
+def _apply_uploaded_media_to_field(instance, field_name, file_url):
+    rel = _relative_media_path_from_url(file_url)
+    if file_url is not None and str(file_url).strip() == '':
+        getattr(instance, field_name).delete(save=False)
+        setattr(instance, field_name, None)
+        instance.save(update_fields=[field_name])
+        return None
+    if not rel:
+        return None
+    if not default_storage.exists(rel):
+        raise ValidationError('Uploaded file could not be found. Please upload it again.')
+    field = getattr(instance, field_name)
+    field.name = rel
+    instance.save(update_fields=[field_name])
+    return rel
+
+
+def _validate_upload_filename(name):
+    raw = str(name or '').strip()
+    if not raw:
+        raise ValidationError('Uploaded file must have a name.')
+    if len(raw) > 180:
+        raise ValidationError('Uploaded file name is too long.')
+    if re.search(r'[\x00-\x1f<>:"|?*]', raw):
+        raise ValidationError('Uploaded file name contains invalid characters.')
+    return raw
+
+
+def _raise_upload_validation_error(message):
+    raise ValidationError(message)
+
+
+def _validate_image_upload_bytes(file_name, payload):
+    if not payload:
+        _raise_upload_validation_error('Uploaded image is empty.')
+    if payload[:2] == b'MZ':
+        _raise_upload_validation_error('Executable files are not allowed.')
+    fmt = ''
+    try:
+        with Image.open(io.BytesIO(payload)) as img:
+            img.verify()
+        with Image.open(io.BytesIO(payload)) as img:
+            fmt = (img.format or '').upper()
+    except (UnidentifiedImageError, OSError):
+        _raise_upload_validation_error('The uploaded image could not be verified.')
+    allowed_formats = {'JPEG', 'PNG', 'WEBP', 'GIF'}
+    if fmt not in allowed_formats:
+        _raise_upload_validation_error('Only JPG, PNG, WEBP, or GIF images are allowed.')
+    return fmt.lower()
+
+
+def _validate_document_upload_bytes(file_name, payload, ext):
+    if not payload:
+        _raise_upload_validation_error('Uploaded document is empty.')
+    if payload[:2] == b'MZ':
+        _raise_upload_validation_error('Executable files are not allowed.')
+
+    ext = str(ext or '').lower()
+    if ext == 'pdf':
+        if not payload.startswith(b'%PDF'):
+            _raise_upload_validation_error('The PDF file signature is invalid.')
+        return 'pdf'
+    if ext == 'docx':
+        names = set()
+        try:
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                names = set(archive.namelist())
+        except zipfile.BadZipFile:
+            _raise_upload_validation_error('The DOCX file is corrupted or invalid.')
+        if 'word/document.xml' not in names:
+            _raise_upload_validation_error('The DOCX file structure is invalid.')
+        return 'docx'
+    if ext == 'doc':
+        if payload[:8] != b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+            _raise_upload_validation_error('The DOC file signature is invalid.')
+        return 'doc'
+    _raise_upload_validation_error('Unsupported document type.')
+
+
+def _storage_name_for_upload(prefix, file_name, safe_ext):
+    folder = f"{prefix}/{timezone.now().strftime('%Y%m%d')}"
+    return f"{folder}/{uuid.uuid4().hex}.{safe_ext}"
+
+
+def _attempt_delivery(delivery, request, *, force=False):
+    campaign = delivery.campaign
+    now = timezone.now()
+    if not force and delivery.status == 'retry_pending' and delivery.next_attempt_at and delivery.next_attempt_at > now:
+        return False
+
+    recipient = delivery.recipient_email if delivery.channel == 'email' else delivery.recipient_phone
+    if not recipient:
+        delivery.status = 'skipped'
+        delivery.last_error = 'Missing recipient contact.'
+        delivery.last_attempt_at = now
+        delivery.save(update_fields=['status', 'last_error', 'last_attempt_at', 'updated_at'])
+        return False
+
+    delivery.attempt_count = int(delivery.attempt_count or 0) + 1
+    delivery.last_attempt_at = now
+    ok = False
+    err = None
+    try:
+        if delivery.channel == 'email':
+            open_url = _ack_url(request, delivery.ack_token, 'opened')
+            confirm_url = _ack_url(request, delivery.ack_token, 'confirmed')
+            reply_url = _ack_url(request, delivery.ack_token, 'replied')
+            ok = bool(send_email(
+                subject=delivery.message_subject or campaign.document.title,
+                recipient_list=[recipient],
+                template_name='school/emails/communication_email.html',
+                context={
+                    'title': delivery.message_subject or campaign.document.title,
+                    'recipient_name': delivery.recipient_name or 'Parent/Guardian',
+                    'student_name': f"{getattr(delivery.student, 'first_name', '')} {getattr(delivery.student, 'last_name', '')}".strip(),
+                    'student_id': getattr(delivery.student, 'student_id', ''),
+                    'class_label': getattr(getattr(delivery.student, 'current_class', None), 'level', ''),
+                    'body_html': delivery.message_body,
+                    'body': rich_text_to_plain_text(delivery.message_body),
+                    'open_url': open_url,
+                    'confirm_url': confirm_url,
+                    'reply_url': reply_url,
+                },
+            ))
+        else:
+            confirm_url = _ack_url(request, delivery.ack_token, 'confirmed')
+            text = rich_text_to_plain_text(delivery.message_body)
+            ok = bool(send_sms(recipient, f"{delivery.message_subject or campaign.document.title} | {text} | Confirm: {confirm_url}"))
+    except Exception as exc:
+        ok = False
+        err = str(exc)
+
+    if ok:
+        delivery.status = 'sent'
+        delivery.sent_at = timezone.now()
+        delivery.last_error = None
+        delivery.next_attempt_at = None
+    else:
+        if delivery.attempt_count <= int(campaign.retry_limit or 0):
+            delivery.status = 'retry_pending'
+            delivery.next_attempt_at = timezone.now() + timedelta(minutes=int(campaign.retry_delay_minutes or 30))
+            delivery.last_error = err or 'Send failed. Will retry.'
+        else:
+            delivery.status = 'failed'
+            delivery.next_attempt_at = None
+            delivery.last_error = err or 'Send failed.'
+    delivery.save(update_fields=[
+        'attempt_count', 'last_attempt_at', 'status', 'sent_at',
+        'last_error', 'next_attempt_at', 'updated_at'
+    ])
+    return ok
+
+
 def _seed_campaign_deliveries(campaign, document, targets, request, audience='guardians'):
     created = 0
     for student in targets:
@@ -5447,68 +6060,7 @@ def _run_campaign(campaign, request, actor=None):
 
     deliveries = campaign.deliveries.filter(status__in=['pending', 'retry_pending']).order_by('id')
     for delivery in deliveries:
-        if delivery.status == 'retry_pending' and delivery.next_attempt_at and delivery.next_attempt_at > now:
-            continue
-        recipient = delivery.recipient_email if campaign.channel == 'email' else delivery.recipient_phone
-        if not recipient:
-            delivery.status = 'skipped'
-            delivery.last_error = 'Missing recipient contact.'
-            delivery.last_attempt_at = now
-            delivery.save(update_fields=['status', 'last_error', 'last_attempt_at', 'updated_at'])
-            continue
-
-        delivery.attempt_count = int(delivery.attempt_count or 0) + 1
-        delivery.last_attempt_at = now
-        ok = False
-        err = None
-        try:
-            if campaign.channel == 'email':
-                open_url = _ack_url(request, delivery.ack_token, 'opened')
-                confirm_url = _ack_url(request, delivery.ack_token, 'confirmed')
-                reply_url = _ack_url(request, delivery.ack_token, 'replied')
-                ok = bool(send_email(
-                    subject=delivery.message_subject or campaign.document.title,
-                    recipient_list=[recipient],
-                    template_name='school/emails/communication_email.html',
-                    context={
-                        'title': delivery.message_subject or campaign.document.title,
-                        'recipient_name': delivery.recipient_name or 'Parent/Guardian',
-                        'student_name': getattr(delivery.student, 'first_name', '') + ' ' + getattr(delivery.student, 'last_name', ''),
-                        'student_id': getattr(delivery.student, 'student_id', ''),
-                        'class_label': getattr(getattr(delivery.student, 'current_class', None), 'level', ''),
-                        'body_html': delivery.message_body,
-                        'body': rich_text_to_plain_text(delivery.message_body),
-                        'open_url': open_url,
-                        'confirm_url': confirm_url,
-                        'reply_url': reply_url,
-                    },
-                ))
-            else:
-                confirm_url = _ack_url(request, delivery.ack_token, 'confirmed')
-                text = rich_text_to_plain_text(delivery.message_body)
-                ok = bool(send_sms(recipient, f"{delivery.message_subject or campaign.document.title} | {text} | Confirm: {confirm_url}"))
-        except Exception as e:
-            ok = False
-            err = str(e)
-
-        if ok:
-            delivery.status = 'sent'
-            delivery.sent_at = timezone.now()
-            delivery.last_error = None
-            delivery.next_attempt_at = None
-        else:
-            if delivery.attempt_count <= campaign.retry_limit:
-                delivery.status = 'retry_pending'
-                delivery.next_attempt_at = timezone.now() + timedelta(minutes=int(campaign.retry_delay_minutes or 30))
-                delivery.last_error = err or 'Send failed. Will retry.'
-            else:
-                delivery.status = 'failed'
-                delivery.next_attempt_at = None
-                delivery.last_error = err or 'Send failed.'
-        delivery.save(update_fields=[
-            'attempt_count', 'last_attempt_at', 'status', 'sent_at',
-            'last_error', 'next_attempt_at', 'updated_at'
-        ])
+        _attempt_delivery(delivery, request)
 
     _refresh_campaign_summary(campaign)
     if actor:
@@ -5952,7 +6504,7 @@ class CommunicationCampaignViewSet(viewsets.ModelViewSet):
 
 
 class CommunicationDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = CommunicationDelivery.objects.select_related('campaign', 'campaign__document', 'student').all().order_by('-id')
+    queryset = CommunicationDelivery.objects.select_related('campaign', 'campaign__document', 'student', 'student__current_class').all().order_by('-id')
     serializer_class = CommunicationDeliverySerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -5960,14 +6512,109 @@ class CommunicationDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
         qs = super().get_queryset()
         role = get_role(self.request.user)
         if role == 'teacher':
-            return qs.filter(campaign__created_by=self.request.user)
-        if role == 'bursar':
-            return qs.filter(Q(campaign__created_by=self.request.user) | Q(campaign__document__library_scope__in=['all', 'bursar']))
-        if role == 'reception':
-            return qs.filter(Q(campaign__created_by=self.request.user) | Q(campaign__document__library_scope__in=['all', 'reception', 'admin']))
+            qs = qs.filter(campaign__created_by=self.request.user)
+        elif role == 'bursar':
+            qs = qs.filter(Q(campaign__created_by=self.request.user) | Q(campaign__document__library_scope__in=['all', 'bursar']))
+        elif role == 'reception':
+            qs = qs.filter(Q(campaign__created_by=self.request.user) | Q(campaign__document__library_scope__in=['all', 'reception', 'admin']))
+        elif role == 'superadmin' or is_admin_role(role) or IsSuperUser().has_permission(self.request, self):
+            pass
+        else:
+            return qs.none()
+
+        channel = (self.request.query_params.get('channel') or '').strip().lower()
+        status_v = (self.request.query_params.get('status') or '').strip().lower()
+        campaign_id = (self.request.query_params.get('campaign') or '').strip()
+        student_id = (self.request.query_params.get('student') or '').strip()
+        class_id = (self.request.query_params.get('class_id') or '').strip()
+        class_level = (self.request.query_params.get('class_level') or '').strip()
+        q = (self.request.query_params.get('q') or '').strip()
+
+        if channel:
+            qs = qs.filter(channel__iexact=channel)
+        if status_v:
+            qs = qs.filter(status__iexact=status_v)
+        if campaign_id.isdigit():
+            qs = qs.filter(campaign_id=int(campaign_id))
+        if student_id.isdigit():
+            qs = qs.filter(student_id=int(student_id))
+        if class_id.isdigit():
+            qs = qs.filter(student__current_class_id=int(class_id))
+        if class_level:
+            qs = qs.filter(student__current_class__level__iexact=class_level)
+        if q:
+            qs = qs.filter(
+                Q(recipient_name__icontains=q)
+                | Q(recipient_email__icontains=q)
+                | Q(recipient_phone__icontains=q)
+                | Q(message_subject__icontains=q)
+                | Q(student__student_id__icontains=q)
+                | Q(student__first_name__icontains=q)
+                | Q(student__last_name__icontains=q)
+                | Q(campaign__document__title__icontains=q)
+            )
+        return qs
+
+    def _can_manage_delivery(self, delivery):
+        role = get_role(self.request.user)
         if role == 'superadmin' or is_admin_role(role) or IsSuperUser().has_permission(self.request, self):
-            return qs
-        return qs.none()
+            return True
+        if role in ['bursar', 'reception']:
+            return True
+        if role == 'teacher':
+            return getattr(delivery.campaign, 'created_by_id', None) == getattr(self.request.user, 'id', None)
+        return False
+
+    @action(detail=True, methods=['post'], url_path='retry')
+    def retry(self, request, pk=None):
+        delivery = self.get_object()
+        if not self._can_manage_delivery(delivery):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        delivery.status = 'retry_pending'
+        delivery.next_attempt_at = timezone.now()
+        delivery.last_error = 'Retry requested manually.'
+        delivery.save(update_fields=['status', 'next_attempt_at', 'last_error', 'updated_at'])
+        _attempt_delivery(delivery, request, force=True)
+        _refresh_campaign_summary(delivery.campaign)
+        try:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='DELIVERY_RETRY',
+                ip_address=get_client_ip(request),
+                details=f'Communication delivery {delivery.id} retried manually.',
+            )
+        except Exception:
+            pass
+        return Response(CommunicationDeliverySerializer(delivery).data)
+
+    @action(detail=True, methods=['post'], url_path='resend')
+    def resend(self, request, pk=None):
+        delivery = self.get_object()
+        if not self._can_manage_delivery(delivery):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        duplicate = CommunicationDelivery.objects.create(
+            campaign=delivery.campaign,
+            student=delivery.student,
+            recipient_name=delivery.recipient_name,
+            recipient_email=delivery.recipient_email,
+            recipient_phone=delivery.recipient_phone,
+            channel=delivery.channel,
+            message_subject=delivery.message_subject,
+            message_body=delivery.message_body,
+            status='pending',
+        )
+        _attempt_delivery(duplicate, request, force=True)
+        _refresh_campaign_summary(delivery.campaign)
+        try:
+            SecurityAuditLog.objects.create(
+                user=request.user,
+                event_type='DELIVERY_RESEND',
+                ip_address=get_client_ip(request),
+                details=f'Communication delivery {delivery.id} resent as {duplicate.id}.',
+            )
+        except Exception:
+            pass
+        return Response(CommunicationDeliverySerializer(duplicate).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get', 'post'], url_path='acknowledge', authentication_classes=[], permission_classes=[permissions.AllowAny])
     def acknowledge(self, request):
@@ -6105,7 +6752,8 @@ class UploadViewSet(viewsets.ViewSet):
         f = request.FILES.get('file')
         if not f:
             return Response({'detail': 'file is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not (getattr(f, 'content_type', '') or '').startswith('image/'):
+        content_type = (getattr(f, 'content_type', '') or '').lower()
+        if not content_type.startswith('image/'):
             return Response({'detail': 'Only image uploads are allowed.'}, status=status.HTTP_400_BAD_REQUEST)
         if f.size and f.size > 2 * 1024 * 1024:
             return Response({'detail': 'Max file size is 2MB.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -6114,10 +6762,24 @@ class UploadViewSet(viewsets.ViewSet):
         if not (IsSuperUser().has_permission(request, self) or is_admin_role(role) or role in ['reception', 'teacher']):
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
-        ext = (f.name.rsplit('.', 1)[-1] if '.' in f.name else 'png').lower()
-        safe_ext = ext if re.match(r'^[a-z0-9]{1,6}$', ext) else 'png'
-        name = f"uploads/{timezone.now().strftime('%Y%m%d')}/{uuid.uuid4().hex}.{safe_ext}"
-        saved = default_storage.save(name, ContentFile(f.read())) 
+        try:
+            raw_name = _validate_upload_filename(f.name)
+            payload = f.read()
+            detected_ext = _validate_image_upload_bytes(raw_name, payload)
+            safe_ext = 'jpg' if detected_ext == 'jpeg' else detected_ext
+            name = _storage_name_for_upload('uploads', raw_name, safe_ext)
+            saved = default_storage.save(name, ContentFile(payload))
+        except ValidationError as e:
+            try:
+                SecurityAuditLog.objects.create(
+                    user=request.user,
+                    event_type='UPLOAD_REJECTED',
+                    ip_address=get_client_ip(request),
+                    details=f'Image upload rejected for {getattr(f, "name", "unknown")}: {e}',
+                )
+            except Exception:
+                pass
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'url': default_storage.url(saved)}) 
 
     @action(detail=False, methods=['post'], url_path='file')
@@ -6144,10 +6806,25 @@ class UploadViewSet(viewsets.ViewSet):
         if not (IsSuperUser().has_permission(request, self) or is_admin_role(role) or role in ['reception', 'teacher']):
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
-        ext = (f.name.rsplit('.', 1)[-1] if '.' in f.name else 'pdf').lower()
-        safe_ext = ext if re.match(r'^[a-z0-9]{1,6}$', ext) else 'pdf'
-        name = f"uploads/docs/{timezone.now().strftime('%Y%m%d')}/{uuid.uuid4().hex}.{safe_ext}"
-        saved = default_storage.save(name, ContentFile(f.read())) 
+        try:
+            raw_name = _validate_upload_filename(f.name)
+            ext = (raw_name.rsplit('.', 1)[-1] if '.' in raw_name else 'pdf').lower()
+            safe_ext = ext if re.match(r'^[a-z0-9]{1,6}$', ext) else 'pdf'
+            payload = f.read()
+            _validate_document_upload_bytes(raw_name, payload, safe_ext)
+            name = _storage_name_for_upload('uploads/docs', raw_name, safe_ext)
+            saved = default_storage.save(name, ContentFile(payload))
+        except ValidationError as e:
+            try:
+                SecurityAuditLog.objects.create(
+                    user=request.user,
+                    event_type='UPLOAD_REJECTED',
+                    ip_address=get_client_ip(request),
+                    details=f'Document upload rejected for {getattr(f, "name", "unknown")}: {e}',
+                )
+            except Exception:
+                pass
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'url': default_storage.url(saved)}) 
 
 

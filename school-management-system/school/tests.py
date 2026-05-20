@@ -262,6 +262,24 @@ class APICredentialVerificationTests(BaseSchoolTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('extra_data', response.data)
 
+    @patch('smtplib.SMTP')
+    def test_gmail_smtp_verify_attempts_live_login(self, mock_smtp):
+        cred = APICredential.objects.create(
+            service_name='gmail_smtp',
+            client_secret='abcdefghijklmnop',
+            extra_data={'username': 'school@example.com'},
+            is_active=True,
+        )
+
+        self.client.force_authenticate(user=self.superadmin)
+        response = self.client.post(f'/api/api-credentials/{cred.pk}/verify/', {}, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['ok'])
+        smtp = mock_smtp.return_value.__enter__.return_value
+        smtp.starttls.assert_called_once()
+        smtp.login.assert_called_once_with('school@example.com', 'abcdefghijklmnop')
+
 
 class DashboardSummaryTests(BaseSchoolTestCase):
     def setUp(self):
@@ -317,6 +335,95 @@ class DashboardSummaryTests(BaseSchoolTestCase):
         self.assertNotIn('client_secret', providers['gmail'])
         self.assertIn('notifications', response.data)
         self.assertEqual(response.data['recent_failures'][0]['service_name'], 'mtn_momo')
+
+
+class StaffCredentialDeliveryTests(BaseSchoolTestCase):
+    def setUp(self):
+        self.superadmin = self.create_user(
+            username='staffsuper',
+            password='StaffSuper123!',
+            role='superadmin',
+            phone_number='0701666000',
+            email_address='staffsuper@example.com',
+        )
+        self.bursar = self.create_user(
+            username='staffbursar',
+            password='StaffBursar123!',
+            role='bursar',
+            phone_number='0701666009',
+            email_address='staffbursar@example.com',
+        )
+        self.client.force_authenticate(user=self.superadmin)
+
+    def test_staff_user_create_rejects_weak_manual_password(self):
+        response = self.client.post(
+            '/api/users/',
+            {
+                'username': 'weakstaff',
+                'role': 'admin',
+                'first_name': 'Weak',
+                'last_name': 'Staff',
+                'phone_number': '0701666001',
+                'email_address': 'weakstaff@example.com',
+                'password_mode': 'manual',
+                'password': '12345678',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Password does not meet security requirements.', response.data['detail'])
+
+    @patch('school.views.send_sms', return_value=True)
+    @patch('school.views.send_email', return_value=True)
+    def test_staff_user_create_returns_credentials_delivery_and_print(self, mock_send_email, mock_send_sms):
+        response = self.client.post(
+            '/api/users/',
+            {
+                'username': 'rosebursar',
+                'role': 'bursar',
+                'first_name': 'Rose',
+                'last_name': 'Namutebi',
+                'phone_number': '0701666002',
+                'email_address': 'rose.bursar@example.com',
+                'password_mode': 'manual',
+                'password': 'RoseTemp123!',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['credentials']['username'], 'rosebursar')
+        self.assertEqual(response.data['credentials']['email_address'], 'rose.bursar@example.com')
+        self.assertTrue(response.data['delivery']['email_sent'])
+        self.assertTrue(response.data['delivery']['sms_sent'])
+        self.assertTrue(response.data['delivery']['email_attempted'])
+        self.assertTrue(response.data['delivery']['sms_attempted'])
+        mock_send_email.assert_called_once()
+        mock_send_sms.assert_called_once()
+        created_user = User.objects.get(username='rosebursar')
+        self.assertTrue(Notification.objects.filter(user=self.superadmin, event_key=f'user_created:{created_user.id}').exists())
+        self.assertTrue(Notification.objects.filter(user=created_user, event_key=f'user_account_ready:{created_user.id}').exists())
+
+        print_path = response.data['handover']['print_credentials_url']
+        pdf_response = self.client.get(print_path)
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response['Content-Type'], 'application/pdf')
+
+    def test_staff_user_create_auto_generates_readable_username_when_blank(self):
+        response = self.client.post(
+            '/api/users/',
+            {
+                'role': 'admin',
+                'first_name': 'Grace',
+                'last_name': 'Nabwire',
+                'phone_number': '0701666012',
+                'email_address': 'grace.nabwire@example.com',
+                'password_mode': 'auto',
+                'auto_password': True,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['credentials']['username'], 'grace.nabwire')
 
     def test_notification_filter_by_student_and_class_for_finance_alerts(self):
         school_class = SchoolClass.objects.create(
@@ -943,6 +1050,8 @@ class RegistrationAndCommunicationTests(BaseSchoolTestCase):
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response['Content-Type'], 'application/pdf')
         self.assertIn(f'/api/students/{student_id}/print-credentials/', print_path)
+        self.assertTrue(Notification.objects.filter(user=self.admin, event_key=f'student_registered:{student_id}').exists())
+        self.assertTrue(Notification.objects.filter(user=self.parent_user, event_key__startswith=f'parent_student_registered:{student_id}:').exists())
 
     @patch('school.views.send_email', return_value=True)
     def test_mail_merge_preview_queue_and_send(self, mock_send_email):

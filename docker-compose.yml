@@ -1,0 +1,30 @@
+version: '3.8'
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: "changeme"
+      DEBUG: "1"
+    volumes:
+      - .:/app
+    working_dir: /app/school-management-system
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn bjs_management.wsgi:application -b 0.0.0.0:8000 --workers 3"
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: bjsdb
+      POSTGRES_USER: bjsuser
+      POSTGRES_PASSWORD: bjspassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bjsuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

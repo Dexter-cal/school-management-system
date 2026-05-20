@@ -183,6 +183,7 @@ let AN_SHOW_ARCHIVED = false;
 let AN_SHOW_EXPIRED = false;
 let CH_FILTER = { class_id: '', year: '', term: '', active: '1', published: '1' };
 let FIN_FILTER = { year: '', term: '' };
+let DELIVERY_FILTER = { channel: '', status: '', campaign: '', student: '', class_id: '', q: '' };
 let APPR_FILTER = { status: 'pending', method: 'bank', q: '' };
 let APPR_SELECTED = new Set();
 const SCHOOL_TIME_ZONE = 'Africa/Nairobi';
@@ -192,6 +193,10 @@ let PROMISE_FILTER = { year: '', term: '', status: '' };
 let GRADING_ROWS = [];
 let ACTIVE_NOTIF_CATEGORY = 'all';
 let NOTIF_FILTER_TIMER = null;
+let PARENT_MATCH_TIMER = null;
+let ACTIVE_PARENT_CANDIDATES = [];
+let TUTORIAL_STATE = { role: '', index: 0, steps: [] };
+let COMMUNICATION_EDITOR_BOOT = null;
 const COMMUNICATION_PLACEHOLDERS = [
     '{recipient_name}', '{recipient_email}', '{recipient_phone}', '{student_name}', '{student_id}',
     '{class_label}', '{class_level}', '{section}', '{parent_name}', '{parent_email}', '{parent_phone}',
@@ -216,6 +221,29 @@ const COMMUNICATION_FOOTER_PRESETS = [
     { value: 'academic', label: 'Academic footer' },
     { value: 'minimal', label: 'Minimal footer' },
 ];
+const FIRST_LOGIN_TUTORIALS = {
+    admin: [
+        { title: 'Start from the dashboard', body: 'Use the dashboard to see today’s term, quick alerts, and shortcuts into registration, finance, and communications.', actionLabel: 'Open Dashboard', page: 'dashboard', label: 'See school status first' },
+        { title: 'Register students cleanly', body: 'When adding a student, the system can match an existing parent account, issue portal credentials, and prepare printable handover sheets.', actionLabel: 'Open Students', page: 'students', label: 'Admissions and parent linking' },
+        { title: 'Work from the communication library', body: 'Templates, drafts, announcements, and mail-merge letters now flow through the Communications Studio so messages stay consistent.', actionLabel: 'Open Communications', page: 'communications', label: 'Templates and campaigns' },
+        { title: 'Review your notifications', body: 'Finance, academic, events, security, and system alerts can be tuned in Settings and filtered in the notification drawer.', actionLabel: 'Open Settings', page: 'settings', label: 'Control alerts and account security' },
+    ],
+    bursar: [
+        { title: 'Use finance as a workflow', body: 'Payments, approvals, cashbook, deposits, promises, and installments are split into focused pages so the close-of-day flow is easier to follow.', actionLabel: 'Open Payments', page: 'finance', label: 'Collections workspace' },
+        { title: 'Track delivery and reminders', body: 'Fee reminders and scheduled finance communications can now be reviewed from Delivery Logs with resend and retry controls.', actionLabel: 'Open Delivery Logs', page: 'delivery_logs', label: 'Communication visibility' },
+        { title: 'Close the day carefully', body: 'Cashbook close, cashier handover, pending deposits, and unresolved promises should be reviewed before end of day.', actionLabel: 'Open Cashbook', page: 'cashbook', label: 'Daily reconciliation' },
+    ],
+    teacher: [
+        { title: 'My Class is your main workspace', body: 'Attendance, marks, class performance, and student history are grouped together so you can manage one class at a time.', actionLabel: 'Open My Class', page: 'my_class', label: 'Teaching workflow' },
+        { title: 'Use Communications for letters and parent notices', body: 'Start with a template, then edit in the full document workspace before sending or printing.', actionLabel: 'Open Communications', page: 'communications', label: 'Notices and mail merge' },
+        { title: 'Mark your own attendance', body: 'Reception can generate the QR, and you can also review your last 30 days in the Teacher Attendance page.', actionLabel: 'Open My Attendance', page: 'teacher_attendance', label: 'Staff attendance' },
+    ],
+    reception: [
+        { title: 'Student support starts here', body: 'Reception can register students, print credentials, manage teacher attendance records, and keep admission documents moving.', actionLabel: 'Open Students', page: 'students', label: 'Front desk operations' },
+        { title: 'Print Queue and Print Desk work together', body: 'Queued credentials, admission letters, report cards, and exam documents can be reviewed before printing.', actionLabel: 'Open Print Queue', page: 'printqueue', label: 'Document handling' },
+        { title: 'Use Communications for reusable letters', body: 'Templates with the school logo, merge fields, and approval workflow live in one place and can be reused by role.', actionLabel: 'Open Communications', page: 'communications', label: 'Reusable office templates' },
+    ],
+};
 const COMMUNICATION_DEFAULT_TEMPLATE = [
     '<p><strong>Date:</strong> {today}</p>',
     '<p>Dear {recipient_name},</p>',
@@ -811,6 +839,7 @@ const NAV = {
         { label: 'Events', icon: 'EV', page: 'events' },
         { label: 'Announcements', icon: 'AN', page: 'announcements' },
         { label: 'Communications', icon: 'CM', page: 'communications' },
+        { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' },
         { section: 'Finance' },
         { label: 'Fees', icon: 'F', page: 'fees' },
         { label: 'Class Charges', icon: 'CH', page: 'charges' },
@@ -848,6 +877,7 @@ const NAV = {
         { label: 'Events', icon: 'EV', page: 'events' },
         { label: 'Announcements', icon: 'AN', page: 'announcements' },
         { label: 'Communications', icon: 'CM', page: 'communications' },
+        { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' },
         { section: 'Finance' },
         { label: 'Fees', icon: 'F', page: 'fees' },
         { label: 'Class Charges', icon: 'CH', page: 'charges' },
@@ -882,6 +912,7 @@ const NAV = {
         { label: 'Events', icon: 'EV', page: 'events' },
         { label: 'Announcements', icon: 'AN', page: 'announcements' },
         { label: 'Communications', icon: 'CM', page: 'communications' },
+        { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' },
         { section: 'Finance' },
         { label: 'Fees', icon: 'F', page: 'fees' },
         { label: 'Class Charges', icon: 'CH', page: 'charges' },
@@ -900,6 +931,7 @@ const NAV = {
         { label: 'Events', icon: 'EV', page: 'events' },
         { label: 'Announcements', icon: 'AN', page: 'announcements' },
         { label: 'Communications', icon: 'CM', page: 'communications' },
+        { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' },
         { section: 'System' },
         { label: 'Settings', icon: 'S', page: 'settings' },
     ],
@@ -920,10 +952,11 @@ const NAV = {
         { label: 'Events', icon: 'EV', page: 'events' },
         { label: 'Announcements', icon: 'AN', page: 'announcements' },
         { label: 'Communications', icon: 'CM', page: 'communications' },
+        { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' },
         { section: 'System' },
         { label: 'Settings', icon: 'S', page: 'settings' },
     ],
-    bursar: [{ section: 'Finance' }, { label: 'Fees', icon: 'F', page: 'fees' }, { label: 'Class Charges', icon: 'CH', page: 'charges' }, { label: 'Payments', icon: '$', page: 'finance' }, { label: 'Cashbook', icon: 'CB', page: 'cashbook' }, { label: 'Approvals', icon: 'AP', page: 'approvals' }, { label: 'Installments', icon: 'IP', page: 'installment_plans' }, { label: 'Fee Promises', icon: 'FP', page: 'fee_promises' }, { label: 'Deposits', icon: 'DP', page: 'deposits' }, { label: 'Expenses', icon: 'EX', page: 'expenses' }, { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' }, { label: 'Settings', icon: 'S', page: 'settings' }],
+    bursar: [{ section: 'Finance' }, { label: 'Fees', icon: 'F', page: 'fees' }, { label: 'Class Charges', icon: 'CH', page: 'charges' }, { label: 'Payments', icon: '$', page: 'finance' }, { label: 'Cashbook', icon: 'CB', page: 'cashbook' }, { label: 'Approvals', icon: 'AP', page: 'approvals' }, { label: 'Installments', icon: 'IP', page: 'installment_plans' }, { label: 'Fee Promises', icon: 'FP', page: 'fee_promises' }, { label: 'Deposits', icon: 'DP', page: 'deposits' }, { label: 'Expenses', icon: 'EX', page: 'expenses' }, { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' }, { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' }, { label: 'Settings', icon: 'S', page: 'settings' }],
     teacher: [
         { section: 'Overview' },
         { label: 'My Dashboard', icon: 'D', page: 'dashboard' },
@@ -937,6 +970,7 @@ const NAV = {
         { label: 'Events', icon: 'EV', page: 'events' },
         { label: 'Announcements', icon: 'AN', page: 'announcements' },
         { label: 'Communications', icon: 'CM', page: 'communications' },
+        { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' },
         { section: 'System' },
         { label: 'Settings', icon: 'S', page: 'settings' },
     ],
@@ -954,6 +988,7 @@ const NAV = {
         { label: 'Print Desk', icon: 'PR', page: 'printdesk' }, 
         { label: 'Exams Print', icon: 'EX', page: 'printdesk' }, 
         { label: 'Communications', icon: 'CM', page: 'communications' },
+        { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' },
         { label: 'Events', icon: 'EV', page: 'events' }, 
         { label: 'Announcements', icon: 'AN', page: 'announcements' },
         { section: 'System' },
@@ -1170,6 +1205,7 @@ function enterApp() {
     refreshTermChip();
     maybeHandleTeacherQR();
     refreshNotificationsBadge();
+    setTimeout(() => { try { maybeOpenFirstLoginTutorial(); } catch {} }, 250);
 
     try {
         if (currentUser && currentUser.profile && currentUser.profile.must_change_password) {
@@ -1362,6 +1398,24 @@ function showHandover(title, lines, handover) {
     openModal('modal-handover');
 }
 
+function credentialDeliveryLines(delivery) {
+    if (!delivery) return [];
+    const lines = [];
+    if (delivery.email_attempted) {
+        const mode = delivery.email_delivery_mode === 'console' ? 'dev console only' : (delivery.email_transport || 'email');
+        lines.push(`Email delivery: ${delivery.email_sent ? 'sent' : 'failed'} via ${mode}`);
+    } else if (delivery.email_transport) {
+        lines.push(`Email route: ${delivery.email_transport}${delivery.email_live_ready ? '' : ' (not live yet)'}`);
+    }
+    if (delivery.sms_attempted) {
+        const mode = delivery.sms_transport || 'SMS gateway';
+        lines.push(`SMS delivery: ${delivery.sms_sent ? 'sent' : 'failed'} via ${mode}`);
+    } else if (delivery.sms_transport) {
+        lines.push(`SMS route: ${delivery.sms_transport}${delivery.sms_live_ready ? '' : ' (not live yet)'}`);
+    }
+    return lines;
+}
+
 function handoverPrint(which) {
     if (!ACTIVE_HANDOVER) return;
     let url = null;
@@ -1369,6 +1423,92 @@ function handoverPrint(which) {
     if (which === 'cred') url = ACTIVE_HANDOVER.print_credentials_url || ACTIVE_HANDOVER.print_teacher_credentials_url || null;
     if (!url) { flash('No print URL available.'); return; }
     window.open(url, '_blank');
+}
+
+function tutorialKeyForRole(role) {
+    return `bjs_tutorial_seen_${String(role || 'user')}`;
+}
+
+function getTutorialStepsForCurrentRole() {
+    const role = (((currentUser || {}).profile || {}).role || 'admin');
+    return FIRST_LOGIN_TUTORIALS[role] || FIRST_LOGIN_TUTORIALS.admin;
+}
+
+function renderTutorialStep() {
+    const titleEl = document.getElementById('tt-ttl');
+    const bodyEl = document.getElementById('tt-body');
+    const metaEl = document.getElementById('tt-meta');
+    const prevBtn = document.getElementById('tt-prev');
+    const nextBtn = document.getElementById('tt-next');
+    const actionBtn = document.getElementById('tt-action');
+    const step = (TUTORIAL_STATE.steps || [])[TUTORIAL_STATE.index] || null;
+    if (!step || !titleEl || !bodyEl || !metaEl) return;
+    titleEl.textContent = step.title || 'Welcome';
+    metaEl.textContent = `Step ${TUTORIAL_STATE.index + 1} of ${TUTORIAL_STATE.steps.length}`;
+    bodyEl.innerHTML = `
+      <div class="tutorial-card">
+        <div class="tutorial-kicker">${escapeHtml(step.label || 'Getting started')}</div>
+        <div class="tutorial-body">${escapeHtml(step.body || '')}</div>
+      </div>
+      <div class="tutorial-list">
+        ${(TUTORIAL_STATE.steps || []).map((item, idx) => `
+          <button class="tutorial-step ${idx === TUTORIAL_STATE.index ? 'active' : ''}" onclick="jumpTutorialStep(${idx})">
+            <span>${idx + 1}</span>
+            <strong>${escapeHtml(item.title || '')}</strong>
+          </button>`).join('')}
+      </div>
+    `;
+    if (prevBtn) prevBtn.disabled = TUTORIAL_STATE.index <= 0;
+    if (nextBtn) nextBtn.textContent = TUTORIAL_STATE.index >= TUTORIAL_STATE.steps.length - 1 ? 'Finish' : 'Next';
+    if (actionBtn) {
+        actionBtn.textContent = step.actionLabel || 'Open';
+        actionBtn.style.display = step.page ? 'inline-flex' : 'none';
+    }
+}
+
+function openTutorial(force = false) {
+    const role = (((currentUser || {}).profile || {}).role || 'admin');
+    if (!force && localStorage.getItem(tutorialKeyForRole(role))) return;
+    TUTORIAL_STATE = { role, index: 0, steps: getTutorialStepsForCurrentRole() };
+    renderTutorialStep();
+    openModal('modal-tutorial');
+}
+
+function maybeOpenFirstLoginTutorial() {
+    const role = (((currentUser || {}).profile || {}).role || 'admin');
+    if (!['admin', 'bursar', 'teacher', 'reception'].includes(role)) return;
+    openTutorial(false);
+}
+
+function jumpTutorialStep(idx) {
+    if (!Array.isArray(TUTORIAL_STATE.steps) || idx < 0 || idx >= TUTORIAL_STATE.steps.length) return;
+    TUTORIAL_STATE.index = idx;
+    renderTutorialStep();
+}
+
+function moveTutorialStep(delta) {
+    const next = TUTORIAL_STATE.index + delta;
+    if (next >= TUTORIAL_STATE.steps.length) {
+        completeTutorial();
+        return;
+    }
+    if (next < 0) return;
+    TUTORIAL_STATE.index = next;
+    renderTutorialStep();
+}
+
+function tutorialOpenCurrentAction() {
+    const step = (TUTORIAL_STATE.steps || [])[TUTORIAL_STATE.index] || null;
+    if (!step || !step.page) return;
+    closeModal('modal-tutorial');
+    loadPage(step.page, null, step.actionLabel || step.title || 'Tutorial');
+}
+
+function completeTutorial() {
+    const role = TUTORIAL_STATE.role || (((currentUser || {}).profile || {}).role || 'admin');
+    try { localStorage.setItem(tutorialKeyForRole(role), String(Date.now())); } catch {}
+    closeModal('modal-tutorial');
+    flash('Tutorial saved. You can reopen it from Settings.');
 }
 
 async function uploadImageFile(file) {
@@ -1972,7 +2112,7 @@ async function loadPage(page, el, label) {
             <div class="page">
                 <div class="page-hero"><div class="page-title">Teacher Management</div>${canEdit ? `<button class="btn btn-primary" onclick="openTeacherAdd()">+ Register Teacher</button>` : ''}</div>
                 <div class="card" style="border-left:4px solid var(--m)"><div class="card-body">
-                  <div style="font-size:12px;color:var(--66)">Teacher login username is auto-generated (first initial + last name). After registering, use the handover card to print credentials or send them by SMS/email.</div>
+                  <div style="font-size:12px;color:var(--66)">Teacher login username defaults to a readable real-name format like <strong>grace.nabwire</strong>. If a similar name already exists, the system safely adds a number such as <strong>grace.nabwire.2</strong>.</div>
                 </div></div>
                 <div style="height:12px"></div>
                 ${groups || '<div class=\"card\"><div class=\"card-body\">No teachers found.</div></div>'}
@@ -2605,6 +2745,103 @@ async function loadPage(page, el, label) {
         const allowed = ['teacher', 'reception', 'superadmin', 'admin', 'headteacher', 'deputy', 'dos'];
         if (!allowed.includes(role)) throw { detail: 'Only staff roles can manage communications.' };
 
+        const [drafts, campaigns] = await Promise.all([
+            API.fetch('/document-drafts/').catch(() => []),
+            API.fetch('/communication-campaigns/').catch(() => []),
+        ]);
+        const communicationKinds = ['letter', 'notice', 'message'];
+        const items = (drafts || []).filter(d => communicationKinds.includes(String(d.kind || '').toLowerCase())).slice(0, 160);
+        const publishedTemplates = items.filter(d => String(d.workflow_status || '').toLowerCase() === 'published').slice(0, 16);
+        const workingTemplates = items.filter(d => String(d.workflow_status || '').toLowerCase() !== 'published').slice(0, 18);
+        const recentCampaigns = (campaigns || []).slice(0, 12);
+        const publishedHtml = publishedTemplates.map(d => `
+          <button class="comms-library-item" onclick="launchCommunicationEditor({ id: ${d.id} })">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+              <div class="comms-library-item-title">${escapeHtml(d.title || 'Untitled template')}</div>
+              ${communicationWorkflowPill(d.workflow_status)}
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">${communicationScopePill(d.library_scope)}<span class="comms-pill scope">${escapeHtml(d.kind || 'template')}</span></div>
+            <div class="comms-library-item-meta">${escapeHtml(d.school_class_level || 'Whole school')} · v${Number(d.version_number || 1)} · ${escapeHtml(d.created_by_username || '-')}</div>
+          </button>`).join('') || `<div class="sub">No published templates yet. Publish a document from the editor and it will appear here for Announcements, Events, and campaigns.</div>`;
+        const workingHtml = workingTemplates.map(d => `
+          <button class="comms-library-item" onclick="launchCommunicationEditor({ id: ${d.id} })">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+              <div class="comms-library-item-title">${escapeHtml(d.title || 'Untitled draft')}</div>
+              ${communicationWorkflowPill(d.workflow_status)}
+            </div>
+            <div class="comms-library-item-meta">${escapeHtml(d.kind || 'template')} · ${escapeHtml(d.school_class_level || 'No class')} · ${formatDateTime(d.updated_at || d.created_at)}</div>
+          </button>`).join('') || `<div class="sub">No working drafts yet. Start from a template card and continue in the full editor.</div>`;
+        const starterCards = COMMUNICATION_STARTER_TEMPLATES.map(t => `
+          <button class="comms-action-card" onclick="launchCommunicationEditor({ starterKey: '${t.key}' })">
+            <div class="badge">${escapeHtml(t.kind)}</div>
+            <h3>${escapeHtml(t.label)}</h3>
+            <p>${escapeHtml(t.summary)}</p>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">${communicationScopePill(t.library_scope)}</div>
+          </button>`).join('');
+        const campaignHtml = recentCampaigns.map(c => `
+          <div class="comms-campaign-card">
+            <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+              <div class="title">${escapeHtml(c.document_title || 'Campaign')}</div>
+              ${communicationCampaignPill(c.status)}
+            </div>
+            <div class="meta">${escapeHtml((c.channel || 'email').toUpperCase())} · ${formatDateTime(c.scheduled_for)} · ${escapeHtml(c.school_class_level || c.student_name || c.audience || 'Targeted')}</div>
+            <div class="sub" style="margin:0 0 8px 0">Sent ${Number(c.sent_count || 0)} · Failed ${Number(c.failed_count || 0)} · Skipped ${Number(c.skipped_count || 0)}</div>
+            <div class="comms-actions">
+              <button class="btn btn-xs btn-ghost" onclick="openCommunicationCampaignReport(${c.id})">Report</button>
+              <button class="btn btn-xs btn-ghost" onclick="runCommunicationCampaign(${c.id})">Run now</button>
+              <button class="btn btn-xs btn-ghost" onclick="cancelCommunicationCampaign(${c.id})">Cancel</button>
+            </div>
+          </div>`).join('') || `<div class="sub">No scheduled campaigns yet.</div>`;
+
+        main.innerHTML = `
+          <div class="page">
+            <div class="comms-hero page-hero">
+              <div class="comms-hero-copy">
+                <div class="comms-hero-kicker">Communications Studio</div>
+                <div class="page-title">Templates, Campaigns & Mail Merge</div>
+                <div class="sub" style="margin-top:8px;font-size:13px">Pick a starter, open a saved template, or review campaigns here. The full editor now opens on its own page so writing documents feels more like a proper workspace and less like a squeezed sidebar tool.</div>
+              </div>
+              <div class="comms-actions">
+                <button class="btn btn-primary" onclick="launchCommunicationEditor()">Open Full Editor</button>
+                <button class="btn btn-ghost" onclick="launchCommunicationEditor({ starterKey: 'fee-defaulter-reminder' })">Fee Reminder</button>
+                <button class="btn btn-ghost" onclick="launchCommunicationEditor({ starterKey: 'welcome-parent-email' })">Welcome Email</button>
+                <button class="btn btn-ghost" onclick="loadPage('delivery_logs', null, 'Delivery Logs')">Delivery Logs</button>
+              </div>
+            </div>
+            <div class="comms-home-grid">
+              <div class="comms-column">
+                <div class="card">
+                  <div class="card-head"><div class="card-title">Start With a Template</div><div class="sub">Open one in the dedicated editor</div></div>
+                  <div class="card-body"><div class="comms-action-grid">${starterCards}</div></div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><div class="card-title">Published Library</div><div class="sub">Approved templates available across the system</div></div>
+                  <div class="card-body"><div class="comms-library">${publishedHtml}</div></div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><div class="card-title">Working Drafts</div><div class="sub">Continue editing without losing context</div></div>
+                  <div class="card-body"><div class="comms-library">${workingHtml}</div></div>
+                </div>
+              </div>
+              <div class="comms-column">
+                <div class="help-box">
+                  <strong style="display:block;color:var(--md);margin-bottom:6px">How this now works</strong>
+                  <div class="sub">1. Choose a starter or saved template here.</div>
+                  <div class="sub">2. The full editor opens on its own page with room for formatting and mail merge.</div>
+                  <div class="sub">3. Save, approve, publish, print, email, or schedule campaigns from there.</div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><div class="card-title">Recent Campaigns</div><div class="sub">Delivery visibility and retries</div></div>
+                  <div class="card-body"><div class="comms-campaign-list">${campaignHtml}</div></div>
+                </div>
+              </div>
+            </div>
+          </div>`;
+    } else if (page === 'communications_editor') {
+        const role = (currentUser.profile && currentUser.profile.role) || 'admin';
+        const allowed = ['teacher', 'reception', 'superadmin', 'admin', 'headteacher', 'deputy', 'dos'];
+        if (!allowed.includes(role)) throw { detail: 'Only staff roles can manage communications.' };
+
         const [classes, students, drafts, campaigns] = await Promise.all([
             API.fetch('/classes/').catch(() => []),
             API.fetch('/students/').catch(() => []),
@@ -2622,7 +2859,7 @@ async function loadPage(page, el, label) {
         const headerOpts = COMMUNICATION_HEADER_PRESETS.map(opt => `<option value="${opt.value}">${escapeHtml(opt.label)}</option>`).join('');
         const footerOpts = COMMUNICATION_FOOTER_PRESETS.map(opt => `<option value="${opt.value}">${escapeHtml(opt.label)}</option>`).join('');
         const publishedHtml = publishedTemplates.map(d => `
-          <button class="comms-library-item" onclick="openCommunicationEdit(${d.id})">
+          <button class="comms-library-item" onclick="launchCommunicationEditor({ id: ${d.id} })">
             <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
               <div class="comms-library-item-title">${escapeHtml(d.title || 'Untitled template')}</div>
               ${communicationWorkflowPill(d.workflow_status)}
@@ -2631,7 +2868,7 @@ async function loadPage(page, el, label) {
             <div class="comms-library-item-meta">${escapeHtml(d.school_class_level || 'Whole school')} · v${Number(d.version_number || 1)} · ${escapeHtml(d.created_by_username || '-')}</div>
           </button>`).join('') || `<div class="sub">No published templates yet. Publish a letter in this workspace and it becomes available to Announcements and Events.</div>`;
         const workingHtml = workingTemplates.map(d => `
-          <button class="comms-library-item" onclick="openCommunicationEdit(${d.id})">
+          <button class="comms-library-item" onclick="launchCommunicationEditor({ id: ${d.id} })">
             <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
               <div class="comms-library-item-title">${escapeHtml(d.title || 'Untitled draft')}</div>
               ${communicationWorkflowPill(d.workflow_status)}
@@ -2639,7 +2876,7 @@ async function loadPage(page, el, label) {
             <div class="comms-library-item-meta">${escapeHtml(d.kind || 'template')} · ${escapeHtml(d.school_class_level || 'No class')} · ${formatDateTime(d.updated_at || d.created_at)}</div>
           </button>`).join('') || `<div class="sub">No working drafts yet. Start from the editor and your drafts will appear here.</div>`;
         const starterHtml = COMMUNICATION_STARTER_TEMPLATES.map(t => `
-          <button class="comms-library-item" onclick="loadCommunicationStarter('${t.key}')">
+          <button class="comms-library-item" onclick="launchCommunicationEditor({ starterKey: '${t.key}' })">
             <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
               <div class="comms-library-item-title">${escapeHtml(t.label)}</div>
               ${communicationScopePill(t.library_scope)}
@@ -2668,35 +2905,17 @@ async function loadPage(page, el, label) {
             <div class="comms-hero page-hero">
               <div class="comms-hero-copy">
                 <div class="comms-hero-kicker">Communications Studio</div>
-                <div class="page-title">Communications & Mail Merge</div>
-                <div class="sub" style="margin-top:8px;font-size:13px">Write once in a branded document workspace, then publish the template for Announcements, Events, print packs, email campaigns, and parent confirmations.</div>
+                <div class="page-title">Communication Editor</div>
+                <div class="sub" style="margin-top:8px;font-size:13px">This is the full-page editor for letters, notices, SMS, and email templates. Save here, then reuse the approved versions across Announcements, Events, registration messages, and finance reminders.</div>
               </div>
-              <div class="seg">
-                <button class="seg-btn active" type="button">${items.length} templates</button>
-                <button class="seg-btn" type="button">${publishedTemplates.length} published</button>
-                <button class="seg-btn" type="button">${recentCampaigns.length} campaigns</button>
+              <div class="comms-actions">
+                <button class="btn btn-ghost" onclick="loadPage('communications', null, 'Communications')">Back to Library</button>
+                <button class="btn btn-ghost" onclick="launchCommunicationEditor({ starterKey: 'welcome-parent-email' })">Load Welcome Email</button>
+                <button class="btn btn-ghost" onclick="launchCommunicationEditor({ starterKey: 'fee-defaulter-reminder' })">Load Fee Reminder</button>
+                <button class="btn btn-ghost" onclick="loadPage('delivery_logs', null, 'Delivery Logs')">Delivery Logs</button>
               </div>
             </div>
-            <div class="comms-shell">
-              <div class="comms-column">
-                <div class="comms-help">
-                  <strong>Start here</strong>
-                  <div class="sub">Create the master document in the center, save it, then publish it so other pages can reuse it. Teachers can keep drafts; admin can approve and publish final versions.</div>
-                </div>
-                <div class="card">
-                  <div class="card-head"><div class="card-title">Starter Templates</div><div class="sub">Ready-made cards</div></div>
-                  <div class="card-body"><div class="comms-library">${starterHtml}</div></div>
-                </div>
-                <div class="card">
-                  <div class="card-head"><div class="card-title">Published Library</div><div class="sub">Reusable school templates</div></div>
-                  <div class="card-body"><div class="comms-library">${publishedHtml}</div></div>
-                </div>
-                <div class="card">
-                  <div class="card-head"><div class="card-title">Working Drafts</div><div class="sub">Recent edits</div></div>
-                  <div class="card-body"><div class="comms-library">${workingHtml}</div></div>
-                </div>
-              </div>
-
+            <div class="comms-editor-layout comms-editor-page">
               <div class="comms-column">
                 <div class="comms-studio">
                   <div class="comms-studio-head">
@@ -2838,9 +3057,16 @@ async function loadPage(page, el, label) {
             </div>
           </div>`;
         ensureCommunicationEditor();
-        const bodyInput = document.getElementById('cm-body');
-        if (bodyInput && !bodyInput.value) setCommunicationEditorContent(COMMUNICATION_DEFAULT_TEMPLATE);
-        clearCommunicationForm({ preserveEditor: true });
+        const boot = COMMUNICATION_EDITOR_BOOT;
+        COMMUNICATION_EDITOR_BOOT = null;
+        clearCommunicationForm();
+        if (boot && boot.id) {
+            await openCommunicationEdit(boot.id);
+        } else if (boot && boot.starterKey) {
+            loadCommunicationStarter(boot.starterKey);
+        }
+    } else if (page === 'delivery_logs') {
+        await renderDeliveryLogsPage(main);
     } else if (page === 'timetable') {
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
         const canEdit = ['superadmin', 'admin', 'headteacher', 'deputy', 'dos', 'reception'].includes(role);
@@ -3733,6 +3959,16 @@ async function loadPage(page, el, label) {
                 'No students or finance records are available yet. Register students first, or use the local demo seed so we can walk through payments, cashbook, installments, promises, and results holds end to end.',
                 `<button class="btn btn-xs btn-ghost" onclick="loadPage('students', null, 'Students')">Open Students</button><button class="btn btn-xs btn-ghost" onclick="loadPage('cashbook', null, 'Cashbook')">Open Cashbook</button>`
             ) + '<div style="height:12px"></div>' : ''}
+            <div class="card" style="margin-bottom:12px"><div class="card-head"><div class="card-title">Finance Navigator</div><div class="sub">Open a focused page instead of staying in one crowded workspace</div></div><div class="card-body">
+              <div class="qa-grid">
+                <button class="qa-btn" onclick="loadPage('approvals', null, 'Approvals')"><span class="qi">AP</span><span class="ql">Approvals</span></button>
+                <button class="qa-btn" onclick="loadPage('cashbook', null, 'Cashbook')"><span class="qi">CB</span><span class="ql">Cashbook Close</span></button>
+                <button class="qa-btn" onclick="loadPage('installment_plans', null, 'Installments')"><span class="qi">IP</span><span class="ql">Installments</span></button>
+                <button class="qa-btn" onclick="loadPage('fee_promises', null, 'Fee Promises')"><span class="qi">FP</span><span class="ql">Fee Promises</span></button>
+                <button class="qa-btn" onclick="loadPage('deposits', null, 'Deposits')"><span class="qi">DP</span><span class="ql">Deposits</span></button>
+                <button class="qa-btn" onclick="loadPage('adjustments', null, 'Adjustments')"><span class="qi">ADJ</span><span class="ql">Adjustments</span></button>
+              </div>
+            </div></div>
             <div class="card" style="border-left:4px solid var(--m)"><div class="card-body">
               <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
                 <div class="field" style="margin:0;min-width:160px"><label>Academic Year</label><input class="field-input" id="fin-year" type="number" value="${selYear}"></div>
@@ -4853,6 +5089,7 @@ async function loadPage(page, el, label) {
                 <div style="display:flex;gap:10px;flex-wrap:wrap">
                   <button class="btn btn-ghost" onclick="toggleTheme()">Toggle Theme</button>
                   <button class="btn btn-ghost" onclick="logoutOtherSessions()">Logout Other Sessions</button>
+                  <button class="btn btn-ghost" onclick="openTutorial(true)">Open Guided Tutorial</button>
                 </div>
               </div></div>
               ${notifHtml}
@@ -4870,6 +5107,146 @@ async function loadPage(page, el, label) {
     } catch (e) {
       const msg = (e && (e.detail || e.status)) ? (e.detail || e.status) : 'Request failed.';
       main.innerHTML = `<div class="page"><div class="card"><div class="card-body"><div style="font-weight:800;color:var(--rd)">Error</div><div style="margin-top:6px;color:var(--66)">${msg}</div></div></div></div>`;
+    }
+}
+
+async function renderDeliveryLogsPage(main) {
+    const role = (currentUser.profile && currentUser.profile.role) || 'admin';
+    const allowed = ['teacher', 'reception', 'superadmin', 'admin', 'headteacher', 'deputy', 'dos', 'bursar'];
+    if (!allowed.includes(role)) throw { detail: 'Only staff roles can access delivery logs.' };
+
+    const params = new URLSearchParams();
+    if (DELIVERY_FILTER.channel) params.set('channel', DELIVERY_FILTER.channel);
+    if (DELIVERY_FILTER.status) params.set('status', DELIVERY_FILTER.status);
+    if (DELIVERY_FILTER.campaign) params.set('campaign', DELIVERY_FILTER.campaign);
+    if (DELIVERY_FILTER.student) params.set('student', DELIVERY_FILTER.student);
+    if (DELIVERY_FILTER.class_id) params.set('class_id', DELIVERY_FILTER.class_id);
+    if (DELIVERY_FILTER.q) params.set('q', DELIVERY_FILTER.q);
+
+    const [deliveries, campaigns, classes, students] = await Promise.all([
+        API.fetch(`/communication-deliveries/${params.toString() ? '?' + params.toString() : ''}`).catch(() => []),
+        API.fetch('/communication-campaigns/').catch(() => []),
+        API.fetch('/classes/').catch(() => []),
+        API.fetch('/students/').catch(() => []),
+    ]);
+
+    const rows = Array.isArray(deliveries) ? deliveries : [];
+    const counts = rows.reduce((acc, item) => {
+        const key = String(item.status || 'pending').toLowerCase();
+        acc.total += 1;
+        acc[key] = (acc[key] || 0) + 1;
+        if (item.opened_at) acc.opened += 1;
+        if (item.confirmed_at) acc.confirmed += 1;
+        return acc;
+    }, { total: 0, pending: 0, retry_pending: 0, failed: 0, skipped: 0, sent: 0, opened: 0, confirmed: 0, replied: 0 });
+
+    const classOpts = `<option value="">All classes</option>` + (classes || []).map(c => `<option value="${c.id}" ${String(DELIVERY_FILTER.class_id || '') === String(c.id) ? 'selected' : ''}>${escapeHtml(c.level || '')}</option>`).join('');
+    const campaignOpts = `<option value="">All campaigns</option>` + (campaigns || []).slice(0, 80).map(c => `<option value="${c.id}" ${String(DELIVERY_FILTER.campaign || '') === String(c.id) ? 'selected' : ''}>${escapeHtml(c.document_title || 'Campaign')} · ${escapeHtml((c.channel || '').toUpperCase())}</option>`).join('');
+    const studentOpts = `<option value="">All students</option>` + groupedStudentOptions(students || []).replace(/<option value="([^"]+)"/g, (m, id) => `<option value="${id}" ${String(DELIVERY_FILTER.student || '') === String(id) ? 'selected' : ''}`);
+    const tableRows = rows.slice(0, 200).map(d => {
+        const retryable = ['failed', 'retry_pending', 'skipped'].includes(String(d.status || '').toLowerCase());
+        const sentLike = ['sent', 'opened', 'confirmed', 'replied'].includes(String(d.status || '').toLowerCase());
+        return `
+          <tr>
+            <td>${formatDateTime(d.created_at)}</td>
+            <td><strong>${escapeHtml(d.campaign_title || d.message_subject || 'Delivery')}</strong><div class="sub">${escapeHtml((d.channel || '').toUpperCase())} · ${escapeHtml(d.campaign_status || '-')}</div></td>
+            <td>${escapeHtml(d.student_name || '-')}<div class="sub">${escapeHtml(d.recipient_name || d.recipient_email || d.recipient_phone || '-')}</div></td>
+            <td>${escapeHtml(d.recipient_email || d.recipient_phone || '-')}</td>
+            <td><span class="badge ${statusBadgeClass(d.status)}">${escapeHtml(d.status || '')}</span><div class="sub">Attempts: ${Number(d.attempt_count || 0)}</div></td>
+            <td>${d.last_error ? `<div style="max-width:260px;white-space:normal">${escapeHtml(d.last_error)}</div>` : '<span class="sub">No error</span>'}</td>
+            <td style="white-space:nowrap">
+              ${retryable ? `<button class="btn btn-xs btn-ghost" onclick="retryDelivery(${d.id})">Retry</button>` : ''}
+              ${sentLike || retryable ? `<button class="btn btn-xs btn-ghost" onclick="resendDelivery(${d.id})">Resend</button>` : ''}
+            </td>
+          </tr>`;
+    }).join('') || `<tr><td colspan="7"><div class="sub">No deliveries match the current filter.</div></td></tr>`;
+
+    main.innerHTML = `
+      <div class="page">
+        <div class="page-hero">
+          <div class="page-title">Delivery Logs</div>
+          <div class="sub">Track email and SMS campaign deliveries, filter by class or student, and trigger resend/retry without reopening the original template.</div>
+        </div>
+        <div class="stats stats-4">
+          <div class="stat-card"><div class="stat-num">${counts.total}</div><div class="stat-label">Visible Deliveries</div><div class="stat-accent blue"></div></div>
+          <div class="stat-card"><div class="stat-num">${counts.sent + counts.opened + counts.confirmed + counts.replied}</div><div class="stat-label">Sent / Reached</div><div class="stat-accent green"></div></div>
+          <div class="stat-card"><div class="stat-num">${counts.retry_pending + counts.failed}</div><div class="stat-label">Need Attention</div><div class="stat-accent red"></div></div>
+          <div class="stat-card"><div class="stat-num">${counts.confirmed}</div><div class="stat-label">Confirmed</div><div class="stat-accent gold"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">Filters</div><div class="sub">Class, student, campaign, channel, and status</div></div>
+          <div class="card-body">
+            <div class="field-inline-row">
+              <select class="field-select" id="dl-channel" style="min-width:150px">
+                <option value="">All channels</option>
+                <option value="email" ${DELIVERY_FILTER.channel === 'email' ? 'selected' : ''}>Email</option>
+                <option value="sms" ${DELIVERY_FILTER.channel === 'sms' ? 'selected' : ''}>SMS</option>
+              </select>
+              <select class="field-select" id="dl-status" style="min-width:170px">
+                <option value="">All statuses</option>
+                <option value="pending" ${DELIVERY_FILTER.status === 'pending' ? 'selected' : ''}>Pending</option>
+                <option value="retry_pending" ${DELIVERY_FILTER.status === 'retry_pending' ? 'selected' : ''}>Retry pending</option>
+                <option value="failed" ${DELIVERY_FILTER.status === 'failed' ? 'selected' : ''}>Failed</option>
+                <option value="skipped" ${DELIVERY_FILTER.status === 'skipped' ? 'selected' : ''}>Skipped</option>
+                <option value="sent" ${DELIVERY_FILTER.status === 'sent' ? 'selected' : ''}>Sent</option>
+                <option value="opened" ${DELIVERY_FILTER.status === 'opened' ? 'selected' : ''}>Opened</option>
+                <option value="confirmed" ${DELIVERY_FILTER.status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
+                <option value="replied" ${DELIVERY_FILTER.status === 'replied' ? 'selected' : ''}>Replied</option>
+              </select>
+              <select class="field-select" id="dl-class" style="min-width:170px">${classOpts}</select>
+              <select class="field-select" id="dl-student" style="min-width:260px">${studentOpts}</select>
+              <select class="field-select" id="dl-campaign" style="min-width:260px">${campaignOpts}</select>
+              <input class="field-input" id="dl-q" placeholder="Search recipient, student, or subject" value="${escapeHtml(DELIVERY_FILTER.q || '')}" style="min-width:240px">
+              <button class="btn btn-primary" onclick="applyDeliveryLogFilters()">Apply</button>
+              <button class="btn btn-ghost" onclick="resetDeliveryLogFilters()">Reset</button>
+              <button class="btn btn-ghost" onclick="loadPage('communications', null, 'Communications')">Back to Communications</button>
+            </div>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+        <div class="card"><div class="card-body no-pad"><div class="tw">
+          <table class="tbl">
+            <thead><tr><th>Created</th><th>Campaign</th><th>Student / Recipient</th><th>Route</th><th>Status</th><th>Last Error</th><th></th></tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div></div></div>
+      </div>`;
+}
+
+function applyDeliveryLogFilters() {
+    DELIVERY_FILTER = {
+        channel: document.getElementById('dl-channel')?.value || '',
+        status: document.getElementById('dl-status')?.value || '',
+        campaign: document.getElementById('dl-campaign')?.value || '',
+        student: document.getElementById('dl-student')?.value || '',
+        class_id: document.getElementById('dl-class')?.value || '',
+        q: document.getElementById('dl-q')?.value?.trim() || '',
+    };
+    loadPage('delivery_logs', null, 'Delivery Logs');
+}
+
+function resetDeliveryLogFilters() {
+    DELIVERY_FILTER = { channel: '', status: '', campaign: '', student: '', class_id: '', q: '' };
+    loadPage('delivery_logs', null, 'Delivery Logs');
+}
+
+async function retryDelivery(id) {
+    try {
+        await API.fetch(`/communication-deliveries/${id}/retry/`, { method: 'POST', body: JSON.stringify({}) });
+        flash('Delivery retry requested.');
+        loadPage('delivery_logs', null, 'Delivery Logs');
+    } catch (e) {
+        flash((e && e.detail) ? e.detail : 'Failed to retry delivery.');
+    }
+}
+
+async function resendDelivery(id) {
+    try {
+        await API.fetch(`/communication-deliveries/${id}/resend/`, { method: 'POST', body: JSON.stringify({}) });
+        flash('Delivery resent.');
+        loadPage('delivery_logs', null, 'Delivery Logs');
+    } catch (e) {
+        flash((e && e.detail) ? e.detail : 'Failed to resend delivery.');
     }
 }
 
@@ -4929,11 +5306,14 @@ async function saveUser() {
     const phone_number = document.getElementById('u-phone').value.trim();
     const email_address = document.getElementById('u-email').value.trim();
 
-    if (!username) { flash('Username required.'); return; }
-    const payload = { username, role, first_name, last_name, phone_number, email_address };
+    if (id && !username) { flash('Username required when editing an existing account.'); return; }
+    const payload = { role, first_name, last_name, phone_number, email_address };
+    if (username) payload.username = username;
 
     let handover = null;
     let initialPassword = null;
+    let credentialResult = null;
+    let finalUsername = username;
 
     if (!id) {
         if (pwMode === 'manual') {
@@ -4946,16 +5326,21 @@ async function saveUser() {
             payload.auto_password = true;
         }
         const created = await API.fetch('/users/', { method: 'POST', body: JSON.stringify(payload) });
+        credentialResult = created;
+        finalUsername = (created && created.credentials && created.credentials.username) || created.username || username;
         initialPassword = (created && created._initial_password) ? created._initial_password : (pwMode === 'manual' ? password : null);
         handover = (created && created.handover) ? created.handover : null;
     } else {
         // Update details first.
         await API.fetch(`/users/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+        finalUsername = username;
 
         // Optional password reset.
         if (pwMode === 'manual' && password) {
             if (!validateStrongPasswordClient(password, 'Manual password')) return;
             const r = await API.fetch(`/users/${id}/reset-password/`, { method: 'POST', body: JSON.stringify({ password_mode: 'manual', password }) });
+            credentialResult = r;
+            finalUsername = (r && r.credentials && r.credentials.username) || finalUsername;
             initialPassword = r && r._initial_password ? r._initial_password : null;
             handover = r && r.handover ? r.handover : null;
         }
@@ -4963,6 +5348,8 @@ async function saveUser() {
             const ok = confirm('Auto-generate a NEW temporary password for this user?');
             if (ok) {
                 const r = await API.fetch(`/users/${id}/reset-password/`, { method: 'POST', body: JSON.stringify({ password_mode: 'auto', auto_password: true }) });
+                credentialResult = r;
+                finalUsername = (r && r.credentials && r.credentials.username) || finalUsername;
                 initialPassword = r && r._initial_password ? r._initial_password : null;
                 handover = r && r.handover ? r.handover : null;
             }
@@ -4973,13 +5360,18 @@ async function saveUser() {
     loadPage('users');
 
     if (initialPassword) {
+        const lines = [
+            `Username: ${finalUsername}`,
+            `Temporary Password: ${initialPassword}`,
+            `Role: ${role}`,
+        ];
+        const creds = credentialResult && credentialResult.credentials ? credentialResult.credentials : null;
+        if (creds && creds.email_address) lines.push(`Email: ${creds.email_address}`);
+        if (creds && creds.phone_number) lines.push(`Phone: ${creds.phone_number}`);
+        lines.push(...credentialDeliveryLines(credentialResult && credentialResult.delivery));
         showHandover(
             'Account Credentials',
-            [
-                `Username: ${username}`,
-                `Temporary Password: ${initialPassword}`,
-                `Role: ${role}`,
-            ],
+            lines,
             handover
         );
     } else {
@@ -5002,6 +5394,84 @@ async function deleteUser(id, username) {
     }
 }
 
+function recommendedUsername(firstName, lastName, role = 'user') {
+    const parts = [
+        normUserPart(firstName).replace(/\./g, ''),
+        normUserPart(lastName).replace(/\./g, ''),
+    ].filter(Boolean);
+    if (parts.length >= 2) return `${parts[0]}.${parts[1]}`.slice(0, 30);
+    return (parts[0] || normUserPart(role).replace(/\./g, '') || 'user').slice(0, 30);
+}
+
+function syncUserUsernamePreview() {
+    const firstName = document.getElementById('u-fname')?.value || '';
+    const lastName = document.getElementById('u-lname')?.value || '';
+    const role = document.getElementById('u-role')?.value || 'user';
+    const preview = document.getElementById('u-un-preview');
+    if (!preview) return;
+    const candidate = recommendedUsername(firstName, lastName, role);
+    preview.innerHTML = `Recommended: <strong>${escapeHtml(candidate || 'user')}</strong> <span class="sub">(the system adds a number only if needed)</span>`;
+}
+
+function applySuggestedUserUsername() {
+    const input = document.getElementById('u-username');
+    if (!input) return;
+    input.value = recommendedUsername(
+        document.getElementById('u-fname')?.value || '',
+        document.getElementById('u-lname')?.value || '',
+        document.getElementById('u-role')?.value || 'user',
+    );
+    syncUserUsernamePreview();
+}
+
+function generateSuggestedPassword(length = 14) {
+    const uppers = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lowers = 'abcdefghijkmnopqrstuvwxyz';
+    const digits = '23456789';
+    const symbols = '!@#$%^&*_-+=?';
+    const all = uppers + lowers + digits + symbols;
+    const picks = [
+        uppers[Math.floor(Math.random() * uppers.length)],
+        lowers[Math.floor(Math.random() * lowers.length)],
+        digits[Math.floor(Math.random() * digits.length)],
+        symbols[Math.floor(Math.random() * symbols.length)],
+    ];
+    const target = Math.max(12, length);
+    const cryptoObj = (typeof window !== 'undefined' && window.crypto && typeof window.crypto.getRandomValues === 'function') ? window.crypto : null;
+    for (let i = picks.length; i < target; i += 1) {
+        if (cryptoObj) {
+            const arr = new Uint32Array(1);
+            cryptoObj.getRandomValues(arr);
+            picks.push(all[arr[0] % all.length]);
+        } else {
+            picks.push(all[Math.floor(Math.random() * all.length)]);
+        }
+    }
+    for (let i = picks.length - 1; i > 0; i -= 1) {
+        const j = cryptoObj
+            ? (() => {
+                const arr = new Uint32Array(1);
+                cryptoObj.getRandomValues(arr);
+                return arr[0] % (i + 1);
+            })()
+            : Math.floor(Math.random() * (i + 1));
+        [picks[i], picks[j]] = [picks[j], picks[i]];
+    }
+    return picks.join('');
+}
+
+function suggestStrongPasswordFor(inputId, modeId, label = 'Password') {
+    const input = document.getElementById(inputId);
+    const mode = document.getElementById(modeId);
+    if (!input) return;
+    if (mode) mode.value = 'manual';
+    if (modeId === 'u-pw-mode') toggleUserPasswordMode();
+    if (modeId === 't-pw-mode') toggleTeacherPasswordMode();
+    if (modeId === 's-ppw-mode' || modeId === 's-spw-mode') toggleStudentPasswordMode();
+    input.value = generateSuggestedPassword(14);
+    flash(`${label} suggestion inserted.`);
+}
+
 function clearUserForm() {
     document.getElementById('u-id').value = '';
     document.getElementById('u-username').value = '';
@@ -5014,6 +5484,7 @@ function clearUserForm() {
     document.getElementById('u-lname').value = '';
     document.getElementById('u-phone').value = '';
     document.getElementById('u-email').value = '';
+    syncUserUsernamePreview();
 }
 
 function toggleUserPasswordMode() {
@@ -5025,6 +5496,12 @@ function toggleUserPasswordMode() {
 
 function openUserAdd() {
     clearUserForm();
+    const fn = document.getElementById('u-fname');
+    const ln = document.getElementById('u-lname');
+    const role = document.getElementById('u-role');
+    if (fn) fn.oninput = syncUserUsernamePreview;
+    if (ln) ln.oninput = syncUserUsernamePreview;
+    if (role) role.onchange = syncUserUsernamePreview;
     openModal('modal-user');
 }
 
@@ -5042,6 +5519,13 @@ async function openUserEdit(id) {
     const pm = document.getElementById('u-pw-mode');
     if (pm) pm.value = 'manual';
     toggleUserPasswordMode();
+    const fn = document.getElementById('u-fname');
+    const ln = document.getElementById('u-lname');
+    const role = document.getElementById('u-role');
+    if (fn) fn.oninput = syncUserUsernamePreview;
+    if (ln) ln.oninput = syncUserUsernamePreview;
+    if (role) role.onchange = syncUserUsernamePreview;
+    syncUserUsernamePreview();
     openModal('modal-user');
 }
 
@@ -5064,7 +5548,7 @@ function clearTeacherForm() {
 }
 
 function normUserPart(s) {
-    return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+    return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '');
 }
 
 function updateTeacherUsernamePreview() {
@@ -5076,7 +5560,7 @@ function updateTeacherUsernamePreview() {
         el.innerHTML = 'Username preview: <strong>...</strong>';
         return;
     }
-    const u = (normUserPart(fn).slice(0, 1) + normUserPart(ln)) || '';
+    const u = recommendedUsername(fn, ln, 'teacher') || '';
     if (!u) {
         el.innerHTML = 'Username preview: <strong>...</strong>';
         return;
@@ -5269,6 +5753,9 @@ async function saveTeacher() {
                     `Username: ${res.credentials.username}`,
                     `Temp password: ${res.credentials.temp_password}`,
                 ];
+                if (res.credentials.email_address) lines.push(`Email: ${res.credentials.email_address}`);
+                if (res.credentials.phone_number) lines.push(`Phone: ${res.credentials.phone_number}`);
+                lines.push(...credentialDeliveryLines(res.delivery));
                 showHandover('Teacher Credentials', lines, res.handover || null);
             }
         }
@@ -5667,6 +6154,116 @@ async function deleteTerm(id) {
     }
 }
 
+function resetStudentParentMatch() {
+    ACTIVE_PARENT_CANDIDATES = [];
+    const hid = document.getElementById('s-existing-parent-user');
+    if (hid) hid.value = '';
+    const box = document.getElementById('s-parent-match');
+    if (box) box.innerHTML = '';
+}
+
+function renderParentCandidateMatches(items) {
+    ACTIVE_PARENT_CANDIDATES = Array.isArray(items) ? items : [];
+    const box = document.getElementById('s-parent-match');
+    if (!box) return;
+    if (!ACTIVE_PARENT_CANDIDATES.length) {
+        box.innerHTML = '';
+        return;
+    }
+    box.innerHTML = `
+      <div class="tutorial-kicker" style="margin-bottom:8px">Possible existing parent account</div>
+      ${ACTIVE_PARENT_CANDIDATES.map(item => `
+        <button class="parent-match-card" type="button" onclick="selectParentCandidate(${Number(item.user_id)})">
+          <strong>${escapeHtml(item.name || item.username || 'Parent account')}</strong>
+          <span>${escapeHtml(item.username || '')}${item.phone_number ? ' · ' + escapeHtml(item.phone_number) : ''}${item.email_address ? ' · ' + escapeHtml(item.email_address) : ''}</span>
+          <span>${(item.linked_students || []).length ? 'Linked: ' + escapeHtml((item.linked_students || []).join(', ')) : 'No linked students yet'}</span>
+        </button>`).join('')}
+      <div class="sub" style="margin-top:8px">Choose one if this is the same parent/guardian so we keep one portal account for the whole family.</div>
+    `;
+}
+
+async function lookupParentCandidates() {
+    const studentId = document.getElementById('s-id')?.value || '';
+    if (studentId) return;
+    const currentSelected = document.getElementById('s-existing-parent-user')?.value || '';
+    if (currentSelected) return;
+    const q = (
+        document.getElementById('s-pn')?.value?.trim()
+        || document.getElementById('s-pem')?.value?.trim()
+        || document.getElementById('s-pph')?.value?.trim()
+        || ''
+    );
+    if (q.length < 2) {
+        resetStudentParentMatch();
+        return;
+    }
+    try {
+        const rows = await API.fetch(`/students/parent-candidates/?q=${encodeURIComponent(q)}`);
+        renderParentCandidateMatches(rows || []);
+    } catch {
+        resetStudentParentMatch();
+    }
+}
+
+function queueParentCandidateLookup() {
+    clearTimeout(PARENT_MATCH_TIMER);
+    PARENT_MATCH_TIMER = setTimeout(() => { lookupParentCandidates(); }, 250);
+}
+
+function selectParentCandidate(userId) {
+    const selected = ACTIVE_PARENT_CANDIDATES.find(item => Number(item.user_id) === Number(userId));
+    const hid = document.getElementById('s-existing-parent-user');
+    const box = document.getElementById('s-parent-match');
+    if (!selected || !hid || !box) return;
+    hid.value = String(selected.user_id);
+    if (selected.name) document.getElementById('s-pn').value = selected.name;
+    if (selected.phone_number) document.getElementById('s-pph').value = selected.phone_number;
+    if (selected.email_address) document.getElementById('s-pem').value = selected.email_address;
+    box.innerHTML = `
+      <div class="parent-match-selected">
+        <strong>Linked to existing parent portal:</strong> ${escapeHtml(selected.name || selected.username || '')}
+        <div class="sub">${escapeHtml(selected.username || '')}${selected.phone_number ? ' · ' + escapeHtml(selected.phone_number) : ''}${selected.email_address ? ' · ' + escapeHtml(selected.email_address) : ''}</div>
+        <button class="btn btn-xs btn-ghost" type="button" onclick="clearParentCandidateSelection()">Choose a different parent</button>
+      </div>
+    `;
+}
+
+function clearParentCandidateSelection() {
+    const hid = document.getElementById('s-existing-parent-user');
+    if (hid) hid.value = '';
+    queueParentCandidateLookup();
+}
+
+function setStudentPhotoValue(url) {
+    const input = document.getElementById('s-photo');
+    const wrap = document.getElementById('s-photo-preview-wrap');
+    const img = document.getElementById('s-photo-preview');
+    if (input) input.value = url || '';
+    if (wrap) wrap.style.display = url ? '' : 'none';
+    if (img) img.src = url || '';
+}
+
+function clearStudentPhoto() {
+    setStudentPhotoValue('');
+}
+
+function wireStudentPhotoUpload() {
+    const drop = document.getElementById('s-photo-drop');
+    const file = document.getElementById('s-photo-file');
+    if (!drop || !file || drop.dataset.wired === '1') return;
+    drop.dataset.wired = '1';
+    wireDropZone(drop, file, async (files) => {
+        if (!files || !files.length) return;
+        try {
+            const url = await uploadImageFile(files[0]);
+            setStudentPhotoValue(url);
+            flash('Student photo uploaded.');
+        } catch (e) {
+            flash((e && e.detail) ? e.detail : 'Failed to upload student photo.');
+        }
+    });
+}
+
 function clearStudentForm() {
     document.getElementById('s-id').value = '';
     document.getElementById('s-sid').value = '';
@@ -5698,6 +6295,10 @@ function clearStudentForm() {
     if (ppw) { ppw.value = ''; ppw.style.display = 'none'; }
     const spw = document.getElementById('s-spw');
     if (spw) { spw.value = ''; spw.style.display = 'none'; }
+    const sPhoto = document.getElementById('s-photo');
+    if (sPhoto) sPhoto.value = '';
+    resetStudentParentMatch();
+    clearStudentPhoto();
 }
 
 function toggleStudentPasswordMode() {
@@ -5737,6 +6338,7 @@ async function openStudentAdd() {
     const sel = document.getElementById('s-class');
     sel.innerHTML = (classes || []).map(c => `<option value="${c.id}">${c.level}</option>`).join('');
     openModal('modal-student');
+    setTimeout(() => { try { wireStudentPhotoUpload(); } catch {} }, 0);
 }
 
 async function openStudentEdit(id) {
@@ -5767,7 +6369,9 @@ async function openStudentEdit(id) {
     document.getElementById('s-ecp').value = s.emergency_contact_phone || '';
     document.getElementById('s-tr').value = s.transport_route || '';
     document.getElementById('s-status').value = s.status || 'active';
+    setStudentPhotoValue(s.photo_url || '');
     openModal('modal-student');
+    setTimeout(() => { try { wireStudentPhotoUpload(); } catch {} }, 0);
 }
 
 // Backwards-compat: keep the old function name used in some earlier UI.
@@ -5796,6 +6400,8 @@ async function saveStudent() {
     const emergency_contact_phone = document.getElementById('s-ecp').value.trim();
     const transport_route = document.getElementById('s-tr').value.trim();
     const status = document.getElementById('s-status').value;
+    const photo_url = document.getElementById('s-photo')?.value?.trim() || '';
+    const existing_parent_user = document.getElementById('s-existing-parent-user')?.value?.trim() || '';
 
     try {
         if (!first_name || !last_name || !parent_name || !parent_relationship || !parent_phone) {
@@ -5811,8 +6417,10 @@ async function saveStudent() {
         allergies, medical_conditions,
         emergency_contact_name, emergency_contact_phone,
         transport_route, status,
+        photo_url,
         parent_email, // not stored on Student; used to keep parent portal profile updated
     };
+        if (!id && existing_parent_user) payload.existing_parent_user = existing_parent_user;
 
         // Optional password modes (only used when accounts are newly created).
         const parent_password_mode = (document.getElementById('s-ppw-mode')?.value || 'auto').toLowerCase();
@@ -5851,6 +6459,7 @@ async function saveStudent() {
                 if (c.parent_username) lines.push(`Parent phone: ${c.parent_username} / ${c.parent_temp_password || '(unchanged)'}`);
                 if (c.parent_email) lines.push(`Parent email: ${c.parent_email}`);
                 if (c.student_username) lines.push(`Student: ${c.student_username} / ${c.student_temp_password || '(unchanged)'}`);
+                lines.push(...credentialDeliveryLines(res.delivery));
                 showHandover('Student Handover', lines, res.handover);
             }
             if (res.delivery) {
@@ -6009,9 +6618,22 @@ function taFilter() {
     });
 }
 
+function buildNotificationQuery(cat, options = {}) {
+    const params = new URLSearchParams();
+    if (cat && cat !== 'all') params.set('category', cat);
+    if (options.unread) params.set('unread', 'true');
+    if (options.includeFilters !== false && notificationFinanceFiltersEnabled()) {
+        const classId = (document.getElementById('notif-class-filter')?.value || '').trim();
+        const q = (document.getElementById('notif-student-filter')?.value || '').trim();
+        if (classId) params.set('class_id', classId);
+        if (q) params.set('q', q);
+    }
+    return params;
+}
+
 async function refreshNotificationsBadge() {
     try {
-        const unread = await API.fetch('/notifications/?unread=true');
+        const unread = await API.fetch(`/notifications/?${buildNotificationQuery('all', { unread: true, includeFilters: false }).toString()}`);
         const dot = document.getElementById('notif-dot');
         if (dot) dot.style.display = (unread && unread.length) ? 'block' : 'none';
     } catch {}
@@ -6048,6 +6670,38 @@ function clearNotificationFilters() {
     if (classSel) classSel.value = '';
     if (studentInput) studentInput.value = '';
     loadNotifications(ACTIVE_NOTIF_CATEGORY || 'all');
+}
+
+async function loadNotificationSummary(cat) {
+    const wrap = document.getElementById('notif-summary');
+    if (!wrap) return;
+    try {
+        const params = buildNotificationQuery(cat || ACTIVE_NOTIF_CATEGORY || 'all');
+        const qs = params.toString() ? `?${params.toString()}` : '';
+        const summary = await API.fetch(`/notifications/summary/${qs}`);
+        const byCategory = summary && summary.by_category ? summary.by_category : {};
+        const byClass = Array.isArray(summary && summary.by_class) ? summary.by_class.slice(0, 4) : [];
+        wrap.style.display = '';
+        wrap.innerHTML = `
+          <div class="notif-summary-grid">
+            <div class="notif-summary-card">
+              <div class="k">Unread</div>
+              <div class="v">${Number(summary && summary.unread_count || 0)}</div>
+            </div>
+            <div class="notif-summary-card">
+              <div class="k">Visible Alerts</div>
+              <div class="v">${Number(summary && summary.total || 0)}</div>
+            </div>
+          </div>
+          <div class="notif-summary-chip-row">
+            ${Object.entries(byCategory).map(([key, value]) => `<span class="badge">${escapeHtml(String(key))}: ${Number(value || 0)}</span>`).join('') || '<span class="sub">No category totals yet.</span>'}
+          </div>
+          ${byClass.length ? `<div class="notif-summary-chip-row">${byClass.map(row => `<span class="badge blue">${escapeHtml(row.class_level || 'Class')}: ${Number(row.total || 0)}</span>`).join('')}</div>` : ''}
+        `;
+    } catch {
+        wrap.style.display = 'none';
+        wrap.innerHTML = '';
+    }
 }
 
 function openNotifications() {
@@ -6397,16 +7051,10 @@ async function deleteGuardianLink(id) {
 async function loadNotifications(cat) {
     ACTIVE_NOTIF_CATEGORY = cat || 'all';
     try { window.ACTIVE_NOTIF_CATEGORY = ACTIVE_NOTIF_CATEGORY; } catch {}
-    const params = new URLSearchParams();
-    if (cat && cat !== 'all') params.set('category', cat);
-    if (notificationFinanceFiltersEnabled()) {
-        const classId = (document.getElementById('notif-class-filter')?.value || '').trim();
-        const q = (document.getElementById('notif-student-filter')?.value || '').trim();
-        if (classId) params.set('class_id', classId);
-        if (q) params.set('q', q);
-    }
+    const params = buildNotificationQuery(cat);
     const qs = params.toString() ? `?${params.toString()}` : '';
     const items = await API.fetch(`/notifications/${qs}`).catch(() => []);
+    await loadNotificationSummary(cat);
     const el = document.getElementById('notif-list');
     if (!el) return;
     if (!items || items.length === 0) {
@@ -7531,6 +8179,27 @@ async function markDocPrinted(id) {
     loadPage('printdesk'); 
 } 
 
+function launchCommunicationEditor(options = {}) {
+    COMMUNICATION_EDITOR_BOOT = options || {};
+    loadPage('communications_editor', null, 'Communication Editor');
+}
+
+function currentCommunicationEditorDocId() {
+    const raw = (document.getElementById('cm-id')?.value || '').trim();
+    return raw ? Number(raw) : null;
+}
+
+function refreshCommunicationWorkspace(docId = null) {
+    if (CURRENT_PAGE === 'communications') {
+        loadPage('communications', null, 'Communications');
+        return;
+    }
+    if (CURRENT_PAGE === 'communications_editor') {
+        if (docId) launchCommunicationEditor({ id: Number(docId) });
+        else launchCommunicationEditor({});
+    }
+}
+
 function syncCommunicationMetaPanel(doc = null) {
     const normalized = doc || {};
     const workflow = String(normalized.workflow_status || 'draft').toLowerCase();
@@ -7733,7 +8402,7 @@ async function queueCommunicationMerge() {
         const docId = await ensureCommunicationTemplateId();
         const res = await API.fetch(`/document-drafts/${docId}/queue-merge/`, { method: 'POST', body: JSON.stringify(collectCommunicationTargeting()) });
         flash(`Queued ${res.count || 0} personalized letter(s).`);
-        if (CURRENT_PAGE === 'communications') loadPage('communications', null, 'Communications');
+        refreshCommunicationWorkspace(Number(docId));
     } catch (e) {
         flash((e && e.detail) ? e.detail : ((e && e.message) ? e.message : 'Queue failed.'));
     }
@@ -7757,7 +8426,7 @@ async function approveCommunicationTemplate() {
         const workflow_notes = (document.getElementById('cm-workflow-notes')?.value || '').trim();
         await API.fetch(`/document-drafts/${docId}/approve/`, { method: 'POST', body: JSON.stringify({ workflow_notes }) });
         flash('Template approved.');
-        if (CURRENT_PAGE === 'communications') loadPage('communications', null, 'Communications');
+        refreshCommunicationWorkspace(Number(docId));
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Approval failed.');
     }
@@ -7768,7 +8437,7 @@ async function publishCommunicationTemplate(force = false) {
         const docId = await ensureCommunicationTemplateId();
         await API.fetch(`/document-drafts/${docId}/publish/`, { method: 'POST', body: JSON.stringify({ force: !!force }) });
         flash('Template published.');
-        if (CURRENT_PAGE === 'communications') loadPage('communications', null, 'Communications');
+        refreshCommunicationWorkspace(Number(docId));
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Publish failed.');
     }
@@ -7779,10 +8448,7 @@ async function cloneCommunicationVersion() {
         const docId = await ensureCommunicationTemplateId();
         const res = await API.fetch(`/document-drafts/${docId}/new-version/`, { method: 'POST', body: JSON.stringify({}) });
         flash('New template version created.');
-        if (CURRENT_PAGE === 'communications') {
-            loadPage('communications', null, 'Communications');
-            setTimeout(() => { try { openCommunicationEdit(res.id); } catch {} }, 200);
-        }
+        refreshCommunicationWorkspace(Number(res.id));
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Versioning failed.');
     }
@@ -7800,7 +8466,7 @@ async function scheduleCommunicationCampaign() {
         if (!payload.scheduled_for) throw new Error('Choose a schedule date and time first.');
         await API.fetch(`/document-drafts/${docId}/schedule-campaign/`, { method: 'POST', body: JSON.stringify(payload) });
         flash('Campaign scheduled.');
-        if (CURRENT_PAGE === 'communications') loadPage('communications', null, 'Communications');
+        refreshCommunicationWorkspace(Number(docId));
     } catch (e) {
         flash((e && e.detail) ? e.detail : ((e && e.message) ? e.message : 'Scheduling failed.'));
     }
@@ -7810,7 +8476,7 @@ async function runDueCommunicationCampaigns() {
     try {
         const res = await API.fetch('/communication-campaigns/run-due/', { method: 'POST', body: JSON.stringify({}) });
         flash(`Ran ${Number(res.ran || 0)} due campaign(s).`);
-        if (CURRENT_PAGE === 'communications') loadPage('communications', null, 'Communications');
+        refreshCommunicationWorkspace(currentCommunicationEditorDocId());
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Failed to run due campaigns.');
     }
@@ -7820,7 +8486,7 @@ async function runCommunicationCampaign(id) {
     try {
         await API.fetch(`/communication-campaigns/${id}/run-now/`, { method: 'POST', body: JSON.stringify({}) });
         flash('Campaign executed.');
-        if (CURRENT_PAGE === 'communications') loadPage('communications', null, 'Communications');
+        refreshCommunicationWorkspace(currentCommunicationEditorDocId());
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Campaign run failed.');
     }
@@ -7830,7 +8496,7 @@ async function cancelCommunicationCampaign(id) {
     try {
         await API.fetch(`/communication-campaigns/${id}/cancel/`, { method: 'POST', body: JSON.stringify({}) });
         flash('Campaign cancelled.');
-        if (CURRENT_PAGE === 'communications') loadPage('communications', null, 'Communications');
+        refreshCommunicationWorkspace(currentCommunicationEditorDocId());
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Cancel failed.');
     }
@@ -7948,12 +8614,22 @@ async function openStudentHistory(studentId) {
       </div>`).join('') || `<div class="sub">No finance events yet.</div>`;
     if (body) body.innerHTML = `
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+        <div style="width:110px;height:130px;border-radius:18px;overflow:hidden;border:1px solid var(--e);background:linear-gradient(135deg,var(--mll),#fff);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          ${s.photo_url ? `<img alt="Student" src="${escapeHtml(s.photo_url)}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:32px;font-weight:900;color:var(--m)">${escapeHtml(((s.first_name || '').slice(0,1) + (s.last_name || '').slice(0,1)).toUpperCase() || 'S')}</div>`}
+        </div>
         <div style="flex:1;min-width:260px">
           <div style="font-weight:900;font-size:16px;color:var(--md)">${s.first_name} ${s.last_name}</div>
           <div style="font-size:12px;color:var(--66);margin-top:2px">${s.student_id} · ${s.current_class_level || '-'}${s.section || ''} · ${s.status}</div>
+          <div class="kv-grid" style="margin-top:10px">
+            <div class="kv-item"><div class="k">Parent</div><div class="v">${escapeHtml(s.parent_name || '-')}</div><div class="sub">${escapeHtml(s.parent_relationship || '')}</div></div>
+            <div class="kv-item"><div class="k">Contacts</div><div class="v">${escapeHtml(s.parent_phone || '-')}</div><div class="sub">${escapeHtml(s.parent_email || s.parent_phone2 || '')}</div></div>
+            <div class="kv-item"><div class="k">Address</div><div class="v">${escapeHtml(s.home_address || 'Not recorded')}</div></div>
+            <div class="kv-item"><div class="k">Health</div><div class="v">${escapeHtml(s.medical_conditions || 'No conditions noted')}</div><div class="sub">${escapeHtml(s.allergies || 'No allergies recorded')}</div></div>
+          </div>
           <div style="margin-top:10px;color:var(--66);font-size:13px">
             <div><strong>Parent:</strong> ${s.parent_name} (${s.parent_relationship})</div>
             <div><strong>Phone:</strong> ${s.parent_phone}${s.parent_phone2 ? ' / ' + s.parent_phone2 : ''}</div>
+            <div><strong>Emergency:</strong> ${escapeHtml(s.emergency_contact_name || 'Not recorded')}${s.emergency_contact_phone ? ' · ' + escapeHtml(s.emergency_contact_phone) : ''}</div>
           </div>
         </div>
         <div style="min-width:260px">

@@ -7,14 +7,14 @@ services:
     branch: master
     autoDeploy: true
     buildCommand: pip install -r requirements.txt
-    startCommand: python manage.py migrate --noinput && python manage.py bootstrap_superadmin && gunicorn bjs_management.wsgi:application
+    startCommand: python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py bootstrap_superadmin && gunicorn bjs_management.wsgi:application --bind 0.0.0.0:$PORT --workers 3
     envVars:
       - key: DEBUG
         value: 'False'
       - key: SECRET_KEY
         fromSecret: SECRET_KEY
       - key: ALLOWED_HOSTS
-        value: '127.0.0.1,localhost'
+        value: '*'
       - key: BOOTSTRAP_SUPERADMIN
         value: 'False'
       - key: BOOTSTRAP_SUPERADMIN_USERNAME
