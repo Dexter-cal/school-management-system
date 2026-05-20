@@ -2047,7 +2047,7 @@ async function loadPage(page, el, label) {
                 <button class="btn btn-xs btn-ghost" onclick="openStudentHistory(${s.id})">History</button>
                 <button class="btn btn-xs btn-ghost" onclick="printReportCardQuick(${s.id})">Report</button>
                 <button class="btn btn-xs btn-ghost" onclick="resetPortals(${s.id})">Reset PW</button>
-                ${canEdit ? `<button class="btn btn-xs btn-ghost" onclick="openStudentEdit(${s.id})">Edit</button>` : ''}
+                ${canEdit ? `<button class="btn btn-xs btn-ghost" onclick="openStudentEdit(${s.id})">Edit</button><button class="btn btn-xs btn-ghost" onclick="openStudentEdit(${s.id})">Move</button>` : ''}
                 ${canDelete ? `<button class="btn btn-xs btn-ghost" onclick="deleteStudent(${s.id})">Delete</button>` : ''}
               </td>
             </tr>`).join('');
@@ -3775,14 +3775,6 @@ async function loadPage(page, el, label) {
               <td>${canEdit ? `<button class="btn btn-xs btn-ghost" onclick="openChargeEdit(${c.id})">Edit</button>` : ''}</td>
             </tr>`;
         }).join('');
-        const historyRows = (credHistory || []).map(h => `
-          <tr>
-            <td><strong>${escapeHtml(credServiceLabel(h.service_name || ''))}</strong></td>
-            <td>${h.is_ok ? '<span class="badge green">Success</span>' : '<span class="badge red">Failed</span>'}</td>
-            <td>${escapeHtml(formatDateTime(h.verified_at, ''))}</td>
-            <td>${escapeHtml(h.verified_by_username || '-')}</td>
-            <td style="font-size:12px;color:var(--66)">${escapeHtml(h.detail || '-')}</td>
-          </tr>`).join('');
 
         main.innerHTML = `
           <div class="page">

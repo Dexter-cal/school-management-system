@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 SETLOCAL EnableDelayedExpansion
 SET SCRIPT_DIR=%~dp0
 CD /d "%SCRIPT_DIR%"

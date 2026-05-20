@@ -12,4 +12,4 @@ qrcode # Added for QR code generation
 whitenoise
 dj-database-url
 psycopg2-binary
-django-storages[boto3]
+# django-storages[boto3]  # Optional S3 storage support; enable only if you need AWS S3 and have internet access.

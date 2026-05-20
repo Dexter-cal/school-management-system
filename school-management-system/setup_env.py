@@ -1,3 +1,5 @@
+import argparse
+import hashlib
 import os
 import secrets
 import shutil
@@ -10,6 +12,7 @@ REPO_ROOT = ROOT.parent
 VENV_DIR = ROOT / ".venv"
 ENV_FILE = ROOT / ".env"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
+REQUIREMENTS_HASH_FILE = VENV_DIR / '.requirements-hash'
 PYTHON = sys.executable
 
 
@@ -80,7 +83,7 @@ def ensure_env_file():
 
 
 def ensure_venv():
-    if VENV_DIR.exists() and (VENV_DIR / 'Scripts' / 'python.exe').exists() or (VENV_DIR / 'bin' / 'python').exists():
+    if VENV_DIR.exists() and ((VENV_DIR / 'Scripts' / 'python.exe').exists() or (VENV_DIR / 'bin' / 'python').exists()):
         return
     print('Creating virtual environment...')
     subprocess.check_call([PYTHON, '-m', 'venv', str(VENV_DIR)])
@@ -114,6 +117,38 @@ def load_env_to_os(env_path: Path):
     return values
 
 
+def get_requirements_hash() -> str:
+    content = Path('requirements.txt').read_text(encoding='utf-8')
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+
+def read_saved_requirements_hash() -> str | None:
+    try:
+        return REQUIREMENTS_HASH_FILE.read_text(encoding='utf-8').strip()
+    except FileNotFoundError:
+        return None
+
+
+def write_requirements_hash(hash_value: str):
+    REQUIREMENTS_HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    REQUIREMENTS_HASH_FILE.write_text(hash_value + '\n', encoding='utf-8')
+
+
+def install_requirements():
+    print('Installing Python dependencies...')
+    run_cmd([
+        venv_python(),
+        '-m', 'pip',
+        'install',
+        '--disable-pip-version-check',
+        '--upgrade',
+        '--upgrade-strategy',
+        'only-if-needed',
+        '-r',
+        'requirements.txt',
+    ])
+
+
 def run_manage(command, env=None):
     env = env or os.environ.copy()
     cmd = [venv_python(), 'manage.py'] + command
@@ -136,22 +171,23 @@ def maybe_prompt_superadmin(values):
 
 
 def main():
-    parser = None
-    try:
-        import argparse
-        parser = argparse.ArgumentParser(description='Setup environment and migrate the Django app.')
-        parser.add_argument('--serve', action='store_true', help='Start the development server after setup')
-        parser.add_argument('--prod', action='store_true', help='Use gunicorn instead of runserver if available')
-        args = parser.parse_args()
-    except Exception:
-        args = type('args', (), {'serve': True, 'prod': False})()
+    parser = argparse.ArgumentParser(description='Setup environment and migrate the Django app.')
+    parser.add_argument('--serve', action='store_true', help='Start the development server after setup')
+    parser.add_argument('--prod', action='store_true', help='Use gunicorn instead of runserver if available')
+    args = parser.parse_args()
 
     ensure_env_file()
     ensure_venv()
 
-    print('Installing dependencies...')
-    run_cmd([venv_pip(), 'install', '--upgrade', 'pip'])
-    run_cmd([venv_pip(), 'install', '-r', 'requirements.txt'])
+    current_hash = get_requirements_hash()
+    previous_hash = read_saved_requirements_hash()
+    if not REQUIREMENTS_HASH_FILE.exists() or previous_hash != current_hash:
+        print('Preparing Python dependencies...')
+        run_cmd([venv_python(), '-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'pip'])
+        install_requirements()
+        write_requirements_hash(current_hash)
+    else:
+        print('Virtual environment already set up. Skipping dependency install.')
 
     values = load_env_to_os(ENV_FILE)
     maybe_prompt_superadmin(values)
