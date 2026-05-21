@@ -4934,7 +4934,9 @@ class ReportCardViewSet(viewsets.ViewSet):
             parent_phone = None
 
         if role == 'parent':
-            if not parent_phone or (student.parent_phone != parent_phone and student.parent_phone2 != parent_phone):
+            linked = StudentGuardianLink.objects.filter(parent_user=request.user, student=student, is_active=True).exists()
+            phone_ok = bool(parent_phone and parent_phone in [student.parent_phone, student.parent_phone2])
+            if not (linked or phone_ok):
                 return Response({'detail': "Permission denied to view this student's report card."}, status=status.HTTP_403_FORBIDDEN)
         if role == 'student':
             # Convention: student portal username == Student.student_id
@@ -5031,7 +5033,9 @@ class ReportCardViewSet(viewsets.ViewSet):
         role = get_role(request.user)
         if role == 'parent':
             parent_phone = getattr(getattr(request.user, 'profile', None), 'phone_number', None)
-            if not parent_phone or (student.parent_phone != parent_phone and student.parent_phone2 != parent_phone):
+            linked = StudentGuardianLink.objects.filter(parent_user=request.user, student=student, is_active=True).exists()
+            phone_ok = bool(parent_phone and parent_phone in [student.parent_phone, student.parent_phone2])
+            if not (linked or phone_ok):
                 return Response({'detail': "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
         if role == 'student':
             if (request.user.username or '').strip() != student.student_id:
