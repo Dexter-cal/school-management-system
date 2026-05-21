@@ -11,7 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
+
+# Copy requirements.txt from the correct subdirectory
+COPY school-management-system/requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 
 # Copy project
