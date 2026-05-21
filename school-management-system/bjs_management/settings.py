@@ -211,6 +211,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+STATICFILES_DIRS = [
+    BASE_DIR / "school" / "static",
+]
+
 # Use compressed manifest storage in production for better caching and integrity
 if not DEBUG and HAS_WHITENOISE:
     STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
