@@ -84,9 +84,10 @@ def ensure_env_file():
 
 def ensure_venv():
     if VENV_DIR.exists() and ((VENV_DIR / 'Scripts' / 'python.exe').exists() or (VENV_DIR / 'bin' / 'python').exists()):
-        return
+        return False
     print('Creating virtual environment...')
     subprocess.check_call([PYTHON, '-m', 'venv', str(VENV_DIR)])
+    return True
 
 
 def venv_python() -> str:
@@ -118,7 +119,7 @@ def load_env_to_os(env_path: Path):
 
 
 def get_requirements_hash() -> str:
-    content = Path('requirements.txt').read_text(encoding='utf-8')
+    content = (ROOT / 'requirements.txt').read_text(encoding='utf-8')
     return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
 
@@ -136,17 +137,22 @@ def write_requirements_hash(hash_value: str):
 
 def install_requirements():
     print('Installing Python dependencies...')
-    run_cmd([
+    cmd = [
         venv_python(),
         '-m', 'pip',
         'install',
         '--disable-pip-version-check',
-        '--upgrade',
         '--upgrade-strategy',
         'only-if-needed',
         '-r',
         'requirements.txt',
-    ])
+    ]
+    run_cmd(cmd)
+
+
+def upgrade_pip():
+    print('Preparing Python dependencies...')
+    run_cmd([venv_python(), '-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'pip'])
 
 
 def run_manage(command, env=None):
@@ -174,16 +180,25 @@ def main():
     parser = argparse.ArgumentParser(description='Setup environment and migrate the Django app.')
     parser.add_argument('--serve', action='store_true', help='Start the development server after setup')
     parser.add_argument('--prod', action='store_true', help='Use gunicorn instead of runserver if available')
+    parser.add_argument('--refresh-deps', action='store_true', help='Force a dependency reinstall even if requirements.txt is unchanged')
+    parser.add_argument('--upgrade-pip', action='store_true', help='Upgrade pip inside the project virtual environment before installing dependencies')
     args = parser.parse_args()
 
     ensure_env_file()
-    ensure_venv()
+    venv_created = ensure_venv()
 
     current_hash = get_requirements_hash()
     previous_hash = read_saved_requirements_hash()
-    if not REQUIREMENTS_HASH_FILE.exists() or previous_hash != current_hash:
-        print('Preparing Python dependencies...')
-        run_cmd([venv_python(), '-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'pip'])
+    deps_changed = (not REQUIREMENTS_HASH_FILE.exists()) or previous_hash != current_hash
+    if args.upgrade_pip or venv_created:
+        upgrade_pip()
+    if args.refresh_deps or deps_changed:
+        if args.refresh_deps and not deps_changed:
+            print('Requirements file is unchanged, but dependency refresh was requested.')
+        elif deps_changed and previous_hash:
+            print('requirements.txt changed. Syncing only missing or required packages...')
+        else:
+            print('Installing project dependencies for the first time...')
         install_requirements()
         write_requirements_hash(current_hash)
     else:

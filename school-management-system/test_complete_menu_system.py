@@ -18,7 +18,6 @@ def test_complete_flow():
     print("="*70)
     
     session = requests.Session()
-    session.timeout = 30  # Global timeout
     
     # Test 1: Basic connectivity
     print("\n[1/5] Testing basic API connectivity...")

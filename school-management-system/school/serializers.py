@@ -61,7 +61,7 @@ class UserSerializer(serializers.ModelSerializer):
             role = obj.profile.role
         except Exception:
             role = None
-        if obj.is_superuser or role == 'superadmin':
+        if obj.is_superuser or role == 'superadmin' or role in ['admin', 'headteacher', 'deputy', 'dos']:
             caps['term_manage'] = True
 
         # AI tools: teacher-only, global toggle, and requires a verified+active AI credential. 
