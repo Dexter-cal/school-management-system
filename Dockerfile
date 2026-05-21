@@ -22,7 +22,6 @@ COPY . /app
 # Set working dir to the django project folder
 WORKDIR /app/school-management-system
 
-RUN python manage.py collectstatic --noinput
 
 ENV PORT=8000
 EXPOSE 8000
