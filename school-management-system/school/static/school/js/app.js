@@ -2348,13 +2348,26 @@ async function loadPage(page, el, label) {
             main.innerHTML = `<div class="page"><div class="card"><div class="card-body">Only the super admin can manage terms.</div></div></div>`;
             return;
         }
-        const [active, all] = await Promise.all([
+        const [active, all, activeCalendar] = await Promise.all([
             API.fetch('/terms/').catch(() => null),
             API.fetch('/terms/all').catch(() => []),
+            API.fetch('/terms/active-calendar/').catch(() => null),
         ]);
         const activeHtml = active && active.academic_year ? `<div><strong>Active:</strong> Year ${active.academic_year}, Term ${active.term_number} (${active.start_date} to ${active.end_date})</div>` : `<div><strong>Active:</strong> None</div>`;
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
         const canManage = !!(currentUser && currentUser.caps && currentUser.caps.term_manage);
+        const calendarMeta = activeCalendar && activeCalendar.term ? `
+          <div style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
+            <span class="badge green">Instruction Days ${activeCalendar.instructional_days || 0}</span>
+            <span class="badge">Weekends ${activeCalendar.weekend_count || 0}</span>
+            <span class="badge">Holiday Break ${(activeCalendar.holiday_break && activeCalendar.holiday_break.days) || 0} days</span>
+            <span class="badge">Calendar Events ${Array.isArray(activeCalendar.events) ? activeCalendar.events.length : 0}</span>
+            <span class="badge">Term Timetables ${Array.isArray(activeCalendar.timetables) ? activeCalendar.timetables.length : 0}</span>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-xs btn-ghost" onclick="viewTermCalendar(${activeCalendar.term.id})">View Calendar</button>
+            <button class="btn btn-xs btn-ghost" onclick="syncTermPublicHolidays(${activeCalendar.term.id})">Sync Public Holidays</button>
+          </div>` : '';
         const rows = Array.isArray(all) ? all.map(t => {
             const st = t.is_archived ? '<span class="badge">Archived</span>' : '<span class="badge green">Active</span>';
             const act = (t.is_archived && role === 'superadmin') ? `<button class="btn btn-xs btn-ghost" onclick="deleteTerm(${t.id})">Delete</button>` : '';
@@ -2371,6 +2384,8 @@ async function loadPage(page, el, label) {
               <td>${mk}</td>
               <td>
                 ${canManage ? `<button class="btn btn-xs btn-ghost" onclick="openTermEdit(${t.id})">Edit</button>` : ''}
+                ${canManage ? `<button class="btn btn-xs btn-ghost" onclick="viewTermCalendar(${t.id})">Calendar</button>` : ''}
+                ${canManage ? `<button class="btn btn-xs btn-ghost" onclick="syncTermPublicHolidays(${t.id})">Holidays</button>` : ''}
                 ${mkBtn}
                 ${act}
               </td>
@@ -2379,7 +2394,7 @@ async function loadPage(page, el, label) {
         main.innerHTML = ` 
             <div class="page"> 
                 <div class="page-hero"><div class="page-title">Academic Terms</div>${canManage ? `<button class="btn btn-primary" onclick="openNewTermModal()">Start New Term</button>` : ''}</div> 
-                <div class="card"><div class="card-body">${activeHtml}</div></div> 
+                <div class="card"><div class="card-body">${activeHtml}${calendarMeta}<div class="sub" style="margin-top:10px">New terms now archive attendance history, carry balances across years, and can sync public holidays into the calendar.</div></div></div> 
                 <div style="height:12px"></div> 
                 <div class="card"><div class="card-body no-pad"> 
                   <table class="tbl"><thead><tr><th>Year</th><th>Term</th><th>Start</th><th>End</th><th>Status</th><th>Marks</th><th></th></tr></thead><tbody>${rows}</tbody></table> 
@@ -3106,9 +3121,14 @@ async function loadPage(page, el, label) {
         const canEdit = ['superadmin', 'admin', 'headteacher', 'deputy', 'dos', 'reception'].includes(role);
 
         if (canEdit) {
-            const classes = await API.fetch('/classes/');
+            const [classes, activeTerm] = await Promise.all([
+                API.fetch('/classes/'),
+                API.fetch('/terms/').catch(() => null),
+            ]);
             const teachers = await API.fetch('/teachers/').catch(() => []);
             const classOptions = (classes || []).map(c => `<option value="${c.id}">${c.level}</option>`).join('');
+            const defaultYear = activeTerm && activeTerm.academic_year ? activeTerm.academic_year : new Date().getFullYear();
+            const defaultTerm = activeTerm && activeTerm.term_number ? activeTerm.term_number : 1;
             main.innerHTML = `
               <div class="page">
                 <div class="page-hero"><div class="page-title">Timetable Builder</div></div>
@@ -3116,6 +3136,8 @@ async function loadPage(page, el, label) {
                   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
                     <div class="field" style="margin:0;min-width:240px"><label>Class</label><select class="field-select" id="tt-class" onchange="ttOnClassChanged()">${classOptions}</select></div>
                     <div class="field" id="tt-sec-wrap" style="margin:0;min-width:120px"><label>Section</label><input class="field-input" id="tt-sec" value="A"></div>
+                    <div class="field" style="margin:0;min-width:140px"><label>Academic Year</label><input class="field-input" id="tt-year" type="number" value="${defaultYear}"></div>
+                    <div class="field" style="margin:0;min-width:120px"><label>Term</label><select class="field-select" id="tt-term"><option value="1" ${Number(defaultTerm) === 1 ? 'selected' : ''}>1</option><option value="2" ${Number(defaultTerm) === 2 ? 'selected' : ''}>2</option><option value="3" ${Number(defaultTerm) === 3 ? 'selected' : ''}>3</option></select></div>
                     <div class="field" style="margin:0;min-width:260px"><label>Days (comma)</label><input class="field-input" id="tt-days" value="Mon,Tue,Wed,Thu,Fri"></div>
                     <div class="field" style="margin:0;min-width:320px"><label>Periods (comma)</label><input class="field-input" id="tt-periods" value="1,2,3,4,5,6,7,8"></div>
                     <button class="btn btn-ghost" onclick="ttLoad()">Load</button>
@@ -3123,6 +3145,7 @@ async function loadPage(page, el, label) {
                     <span class="sub" id="tt-dirty" style="min-width:120px">Saved</span>
                     <button class="btn btn-ghost" onclick="ttPrint()">Print</button>
                   </div>
+                  <div class="sub" style="margin-top:8px">Timetables are now saved per term. If a term-specific timetable is missing, the system can still fall back to an older generic one.</div>
                   <div style="height:10px"></div>
                   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
                     <div class="field" style="margin:0;min-width:170px"><label>Auto Times Start</label><input class="field-input" id="tt-auto-start" type="time" value="08:00"></div>
@@ -3185,8 +3208,9 @@ async function loadPage(page, el, label) {
                 return `<td class="${isNow ? 'tt-now-cell' : ''} ${isMine ? 'tt-mine-cell' : ''}">${v || ''}</td>`;
             }).join('')}</tr>`).join('');
             const lvl = clsMap.get(t.school_class) || t.school_class;
+            const termBadge = (t.academic_year && t.term_number) ? `<span class="badge">T${t.term_number} ${t.academic_year}</span>` : `<span class="badge">General timetable</span>`;
             return `<div class="card" style="margin-bottom:12px">
-              <div class="card-head"><div class="card-title">Class ${lvl} ${t.section}</div></div>
+              <div class="card-head"><div class="card-title">Class ${lvl} ${t.section}</div><div>${termBadge}</div></div>
               <div class="card-body no-pad"><div class="tw"><table class="tbl">${head}<tbody>${body}</tbody></table></div></div>
             </div>`;
         }).join('');
@@ -6013,6 +6037,34 @@ async function unlockMarks(id) {
     await API.fetch(`/terms/${id}/unlock-marks/`, { method: 'POST', body: JSON.stringify({}) });
     flash('Marks unlocked.');
     loadPage('terms', null, 'Terms');
+}
+
+async function syncTermPublicHolidays(id) {
+    if (!id) return;
+    await API.fetch(`/terms/${id}/sync-public-holidays/`, { method: 'POST', body: JSON.stringify({}) });
+    flash('Public holidays synced for that term.');
+    loadPage('terms', null, 'Terms');
+}
+
+async function viewTermCalendar(id) {
+    if (!id) return;
+    const data = await API.fetch(`/terms/${id}/calendar/`);
+    const term = data && data.term ? data.term : null;
+    if (!term) { flash('Term calendar not found.'); return; }
+    const events = Array.isArray(data.events) ? data.events : [];
+    const timetables = Array.isArray(data.timetables) ? data.timetables : [];
+    const holiday = data.holiday_break || {};
+    const lines = [
+        `Year ${term.academic_year} Term ${term.term_number}`,
+        `Status: ${data.status || '-'}`,
+        `Dates: ${term.start_date} to ${term.end_date}`,
+        `Instruction days: ${data.instructional_days || 0}`,
+        `Weekend days: ${data.weekend_count || 0}`,
+        `Holiday break: ${holiday.days || 0} day(s)${holiday.start_date ? ` (${holiday.start_date} to ${holiday.end_date})` : ''}`,
+        `Events in range: ${events.length}`,
+        `Timetables linked: ${timetables.length}`,
+    ];
+    alert(lines.join('\n'));
 }
 
 async function createDepositBatchFromSelected() {
@@ -9513,15 +9565,19 @@ async function ttLoad() {
     const cls = document.getElementById('tt-class')?.value;
     ttOnClassChanged();
     const sec = (document.getElementById('tt-sec')?.value || '').trim().toUpperCase();
+    const year = parseInt(document.getElementById('tt-year')?.value || '0', 10) || '';
+    const term_number = parseInt(document.getElementById('tt-term')?.value || '0', 10) || '';
     const days = ttParseList(document.getElementById('tt-days')?.value || 'Mon,Tue,Wed,Thu,Fri');
     const periods = ttParseList(document.getElementById('tt-periods')?.value || '1,2,3,4,5,6,7,8');
 
     const subs = await API.fetch(`/class-subjects/?school_class=${encodeURIComponent(cls)}`).catch(() => []);
     const subjectNames = (subs || []).map(x => x.subject_name || '').filter(Boolean);
-    TT = { ...TT, school_class: cls, section: sec, days, periods, times: {}, cells: {}, subjects: subjectNames };
+    TT = { ...TT, school_class: cls, section: sec, academic_year: year, term_number, days, periods, times: {}, cells: {}, subjects: subjectNames };
 
     // Use filtered list endpoint for admins/reception.
     const qs = new URLSearchParams({ school_class: String(cls || ''), section: String(sec || '') });
+    if (year) qs.set('academic_year', String(year));
+    if (term_number) qs.set('term_number', String(term_number));
     const existing = await API.fetch(`/timetable/?${qs.toString()}`).catch(() => []);
     const tt = (existing && existing.length) ? existing[0] : null;
     if (tt) {
@@ -9545,8 +9601,12 @@ async function ttSave() {
     const cls = document.getElementById('tt-class')?.value;
     ttOnClassChanged();
     const sec = (document.getElementById('tt-sec')?.value || '').trim().toUpperCase();
+    const academic_year = parseInt(document.getElementById('tt-year')?.value || '0', 10) || null;
+    const term_number = parseInt(document.getElementById('tt-term')?.value || '0', 10) || null;
     TT.school_class = cls;
     TT.section = sec;
+    TT.academic_year = academic_year;
+    TT.term_number = term_number;
     TT.days = ttParseList(document.getElementById('tt-days')?.value || 'Mon,Tue,Wed,Thu,Fri');
     TT.periods = ttParseList(document.getElementById('tt-periods')?.value || '1,2,3,4,5,6,7,8');
     // Keep only times for current periods.
@@ -9559,12 +9619,14 @@ async function ttSave() {
     const payload = {
         school_class: cls,
         section: sec,
+        academic_year,
+        term_number,
         slots: { days: TT.days, periods: TT.periods, times: TT.times },
         cells: TT.cells || {},
     };
     await API.fetch('/timetable/upsert/', { method: 'POST', body: JSON.stringify(payload) });
     ttSetDirty(false);
-    flash('Timetable saved.');
+    flash(`Timetable saved for Term ${term_number || '-'} ${academic_year || ''}`.trim());
 }
 
 function ttPrint() {
@@ -9589,7 +9651,7 @@ function ttPrint() {
       <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:8px;font-size:12px}th{background:#7A0000;color:#fff}td:first-child{background:#f3f3f3}</style>
       </head><body>
       <h2>Timetable</h2>
-      <div style="margin-bottom:10px">Class ID: ${TT.school_class || ''}${TT.section ? (' · Section: ' + TT.section) : ''}</div>
+      <div style="margin-bottom:10px">Class ID: ${TT.school_class || ''}${TT.section ? (' · Section: ' + TT.section) : ''}${TT.term_number ? (' · Term ' + TT.term_number) : ''}${TT.academic_year ? (' · Year ' + TT.academic_year) : ''}</div>
       <table><thead>${head}</thead><tbody>${rows}</tbody></table>
       </body></html>`;
     const w = window.open('', '_blank');
@@ -9638,8 +9700,12 @@ function ttOnTeacherPick(cellKey, teacherId) {
 async function ttCopyFrom() {
     const srcClass = document.getElementById('tt-copy-class')?.value;
     const srcSec = (document.getElementById('tt-copy-sec')?.value || '').trim().toUpperCase();
+    const srcYear = parseInt(document.getElementById('tt-year')?.value || '0', 10) || '';
+    const srcTerm = parseInt(document.getElementById('tt-term')?.value || '0', 10) || '';
     if (!srcClass) { flash('Select a source class to copy from.'); return; }
     const qs = new URLSearchParams({ school_class: String(srcClass || ''), section: String(srcSec || '') });
+    if (srcYear) qs.set('academic_year', String(srcYear));
+    if (srcTerm) qs.set('term_number', String(srcTerm));
     const existing = await API.fetch(`/timetable/?${qs.toString()}`).catch(() => []);
     const tt = (existing && existing.length) ? existing[0] : null;
     if (!tt) { flash('No timetable found for that class/section.'); return; }

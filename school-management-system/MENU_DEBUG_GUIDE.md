@@ -11,22 +11,26 @@ If you're not seeing the menu items (Class, Settings, Events, etc.) on the left 
 ## Step 2: Perform Login
 
 1. Go to http://127.0.0.1:8000
-2. Enter username: `admin`
-3. Enter password: `admin`
+2. Enter your configured super admin username
+3. Enter your configured super admin password
 4. Click "Sign In" button
+
+Important:
+- Do not use or share real production credentials in this guide.
+- Keep `.env` local only. It is intentionally ignored by Git.
 
 ## Step 3: Check Console for Debug Messages
 
 After you log in, look for messages in the Console that start with `[DEBUG]`. These will tell us what's happening:
 
 Examples of what you should see:
-```
+``` 
 [DEBUG] DOMContentLoaded: calling /auth/me/
-[DEBUG] DOMContentLoaded: /auth/me/ returned {id: 1, username: "admin", ...}
+[DEBUG] DOMContentLoaded: /auth/me/ returned {id: 1, username: "superadmin-user", ...}
 [DEBUG] === doLogin() STARTING ===
 [DEBUG] doLogin() - calling /auth/login/...
 [DEBUG] === enterApp() STARTING ===
-[DEBUG] enterApp() - currentUser: {id: 1, username: "admin", ...}
+[DEBUG] enterApp() - currentUser: {id: 1, username: "superadmin-user", ...}
 [DEBUG] enterApp() - currentUser.profile.role: superadmin
 [DEBUG] buildSidebar(): role= superadmin
 [DEBUG] buildSidebar() completed successfully

@@ -6,6 +6,7 @@ Tests: Login → Profile retrieval → Frontend code validation
 
 import requests
 import json
+import os
 
 def test_sidebar_menu():
     session = requests.Session()
@@ -26,11 +27,14 @@ def test_sidebar_menu():
         return False
     
     # Test 2: Login
-    print("\n[TEST 2] Testing authentication (admin/admin)...")
+    print("\n[TEST 2] Testing authentication (configured superadmin credentials)...")
     try:
         resp = session.post(
             'http://127.0.0.1:8000/api/auth/login/',
-            json={'identifier': 'admin', 'password': 'admin'},
+            json={
+                'identifier': os.environ.get('BJS_TEST_USERNAME', 'admin'),
+                'password': os.environ.get('BJS_TEST_PASSWORD', ''),
+            },
             headers={'X-CSRFToken': csrf_token, 'Content-Type': 'application/json'},
             timeout=5
         )
@@ -101,7 +105,7 @@ if __name__ == '__main__':
         print("  • CSS visibility verification")
         print("\nTo verify in browser:")
         print("  1. Open http://127.0.0.1:8000")
-        print("  2. Login with admin/admin")
+        print("  2. Set BJS_TEST_USERNAME and BJS_TEST_PASSWORD, then login with those credentials")
         print("  3. Press F12 and check Console tab")
         print("  4. Run: debugSidebar()")
         print("  5. Menu items should be visible in sidebar")

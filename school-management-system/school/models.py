@@ -204,6 +204,10 @@ class Payment(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='cash')
     reference = models.CharField(max_length=80, blank=True, null=True)
+    gateway_reference = models.CharField(max_length=120, blank=True, null=True, unique=True, db_index=True)
+    provider_name = models.CharField(max_length=40, blank=True, null=True)
+    provider_status = models.CharField(max_length=40, blank=True, null=True)
+    provider_payload = models.JSONField(default=dict, blank=True, null=True)
     # For bank/mobile-money slips submitted by parents/students in the portal.
     submitted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='submitted_payments')
     received_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='received_payments')
@@ -481,6 +485,9 @@ class Attendance(models.Model):
     date = models.DateField()
     status = models.CharField(max_length=10) # Present, Absent, Late
     marked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    academic_year = models.IntegerField(blank=True, null=True)
+    term_number = models.IntegerField(blank=True, null=True)
+    is_archived = models.BooleanField(default=False)
 
 
 TEACHER_ATTENDANCE_STATUS_CHOICES = [
@@ -543,13 +550,17 @@ class Timetable(models.Model):
     school_class = models.ForeignKey(SchoolClass, on_delete=models.CASCADE)
     # Some schools do not use sections (A/B). Use empty string in that case.
     section = models.CharField(max_length=10, blank=True, default='')
+    academic_year = models.IntegerField(blank=True, null=True)
+    term_number = models.IntegerField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
     slots = models.JSONField(default=dict)
     cells = models.JSONField(default=dict)
 
     class Meta:
-        unique_together = (('school_class', 'section'),)
+        unique_together = (('school_class', 'section', 'academic_year', 'term_number'),)
         indexes = [
             models.Index(fields=['school_class', 'section']),
+            models.Index(fields=['academic_year', 'term_number', 'is_active']),
         ]
 
 

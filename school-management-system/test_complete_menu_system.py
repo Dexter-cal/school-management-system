@@ -7,6 +7,7 @@ Tests: API connectivity → CSRF → Login → Profile retrieval → Frontend co
 import requests
 import json
 import time
+import os
 from requests.exceptions import ConnectTimeout, ReadTimeout
 
 def test_complete_flow():
@@ -41,9 +42,12 @@ def test_complete_flow():
         return False
     
     # Test 3: User authentication
-    print("[3/5] Authenticating user (admin/admin)...")
+    print("[3/5] Authenticating user (configured superadmin credentials)...")
     try:
-        login_data = {'identifier': 'admin', 'password': 'admin'}
+        login_data = {
+            'identifier': os.environ.get('BJS_TEST_USERNAME', 'admin'),
+            'password': os.environ.get('BJS_TEST_PASSWORD', ''),
+        }
         headers = {
             'X-CSRFToken': csrf_token,
             'Content-Type': 'application/json'
@@ -144,7 +148,7 @@ def main():
             print("  • All required menu components present")
             print("\nNEXT STEPS:")
             print("  1. Open browser: http://127.0.0.1:8000")
-            print("  2. Login with: admin / admin")
+            print("  2. Set BJS_TEST_USERNAME and BJS_TEST_PASSWORD, then login with those credentials")
             print("  3. Check if menu items appear in sidebar")
             print("  4. Open browser console (F12)")
             print("  5. Run: debugSidebar()")

@@ -1,10 +1,10 @@
 # pyright: reportAttributeAccessIssue=false, reportIncompatibleMethodOverride=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.contrib.auth import authenticate, login, logout
 from django.db.models import F, Avg, Q, Count, Sum, Max # Added for aggregation
 from django.db import transaction, IntegrityError # Added for atomic operations and DB error handling
@@ -81,6 +81,374 @@ logger = logging.getLogger(__name__)
 
 def _truthy(v):
     return str(v or '').strip().lower() in ('1', 'true', 'yes', 'y', 'on')
+
+
+def _current_term():
+    return AcademicTerm.objects.filter(is_archived=False).order_by('-academic_year', '-term_number', '-start_date').first()
+
+
+def _exact_term_for_date(target_date):
+    if not target_date:
+        return None
+    return AcademicTerm.objects.filter(start_date__lte=target_date, end_date__gte=target_date).order_by('-academic_year', '-term_number', '-start_date').first()
+
+
+def _term_for_date(target_date):
+    if not target_date:
+        return _current_term()
+    return _exact_term_for_date(target_date) or _current_term()
+
+
+def _term_covers_range(term, start_date, end_date=None, *, allow_holiday_break=False):
+    if not term or not start_date:
+        return False
+    end_v = end_date or start_date
+    window_end = term.end_date + timedelta(days=max(0, int(term.holiday_break_days or 0))) if allow_holiday_break else term.end_date
+    return term.start_date <= start_date <= window_end and term.start_date <= end_v <= window_end
+
+
+def _find_term_covering_range(start_date, end_date=None, *, allow_holiday_break=False, include_archived=False):
+    qs = AcademicTerm.objects.all()
+    if not include_archived:
+        qs = qs.filter(is_archived=False)
+    for term in qs.order_by('-academic_year', '-term_number', '-start_date'):
+        if _term_covers_range(term, start_date, end_date, allow_holiday_break=allow_holiday_break):
+            return term
+    return None
+
+
+def _require_term_window(*, start_date, end_date=None, allow_holiday_break=False, include_archived=False, label='date'):
+    term = _find_term_covering_range(start_date, end_date, allow_holiday_break=allow_holiday_break, include_archived=include_archived)
+    if term:
+        return term
+    end_v = end_date or start_date
+    if end_date and end_date != start_date:
+        raise DRFValidationError({label: f'{label} must fall within a configured academic term window.'})
+    raise DRFValidationError({label: f'{label} must fall within a configured academic term.'})
+
+
+def _require_active_term_target(academic_year, term_number, *, label='term'):
+    active_term = _current_term()
+    if not active_term:
+        raise DRFValidationError({label: 'No active term is configured.'})
+    if int(academic_year) != int(active_term.academic_year) or int(term_number) != int(active_term.term_number):
+        raise DRFValidationError({label: f'Only the active term ({active_term.term_number}/{active_term.academic_year}) can be used right now.'})
+    return active_term
+
+
+def _term_sort_key(year, term):
+    try:
+        return (int(year), int(term))
+    except Exception:
+        return None
+
+
+def _iter_student_term_pairs_upto(student, academic_year, term_number):
+    target = _term_sort_key(academic_year, term_number)
+    if target is None or not student:
+        return []
+    pairs = set()
+    for inv in Invoice.objects.filter(student=student).values_list('academic_year', 'term_number'):
+        key = _term_sort_key(inv[0], inv[1])
+        if key and key <= target:
+            pairs.add(key)
+    for pay in Payment.objects.filter(student=student).values_list('academic_year', 'term_number'):
+        key = _term_sort_key(pay[0], pay[1])
+        if key and key <= target:
+            pairs.add(key)
+    for adj in InvoiceAdjustment.objects.filter(student=student, is_active=True).values_list('academic_year', 'term_number'):
+        key = _term_sort_key(adj[0], adj[1])
+        if key and key <= target:
+            pairs.add(key)
+    if target not in pairs:
+        pairs.add(target)
+    return sorted(pairs)
+
+
+def _base_due_for_term(student, academic_year, term_number):
+    if not student or not student.current_class_id:
+        return Decimal('0.00')
+    inv = Invoice.objects.filter(student=student, academic_year=academic_year, term_number=term_number).first()
+    if inv is not None and inv.amount_due is not None:
+        try:
+            return Decimal(str(inv.amount_due)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        except Exception:
+            pass
+    fs = FeeStructure.objects.filter(school_class_id=student.current_class_id, year=academic_year, term=term_number).first()
+    if fs:
+        try:
+            return Decimal(str(fs.amount)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        except Exception:
+            return Decimal('0.00')
+    try:
+        return (Decimal(str(student.current_class.annual_fee)) / Decimal('3')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal('0.00')
+
+
+def _class_extras_for_term(student, academic_year, term_number):
+    if not student or not student.current_class_id:
+        return Decimal('0.00')
+    sec = (student.section or '').strip().upper()
+    cq = ClassCharge.objects.filter(
+        school_class_id=student.current_class_id,
+        is_active=True,
+        is_published=True,
+    ).filter(Q(section__isnull=True) | Q(section='') | Q(section=sec)).filter(
+        Q(academic_year__isnull=True) | Q(academic_year=academic_year)
+    ).filter(
+        Q(term_number__isnull=True) | Q(term_number=term_number)
+    )
+    v = cq.aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+    try:
+        return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal('0.00')
+
+
+def _adjustments_for_term(student, academic_year, term_number):
+    if not student:
+        return Decimal('0.00')
+    v = InvoiceAdjustment.objects.filter(
+        student=student,
+        academic_year=academic_year,
+        term_number=term_number,
+        is_active=True,
+    ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+    try:
+        return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal('0.00')
+
+
+def _payments_for_term(student, academic_year, term_number):
+    if not student:
+        return Decimal('0.00')
+    v = Payment.objects.filter(
+        student=student,
+        academic_year=academic_year,
+        term_number=term_number,
+        status__in=['received', 'approved'],
+    ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+    try:
+        return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal('0.00')
+
+
+def _opening_balance_before_term(student, academic_year, term_number):
+    opening = Decimal('0.00')
+    target = _term_sort_key(academic_year, term_number)
+    if target is None:
+        return opening
+    for yr, tm in _iter_student_term_pairs_upto(student, academic_year, term_number):
+        if (yr, tm) >= target:
+            break
+        due = (_base_due_for_term(student, yr, tm) + _class_extras_for_term(student, yr, tm) + _adjustments_for_term(student, yr, tm)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        paid = _payments_for_term(student, yr, tm)
+        opening = (opening + paid - due).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return opening
+
+
+def _public_holiday_settings():
+    raw = get_system_setting('public_holiday_settings', {}) or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    country_code = str(raw.get('country_code') or 'UG').strip().upper() or 'UG'
+    subdivisions = raw.get('subdivision_code')
+    return {
+        'enabled': bool(raw.get('enabled', True)),
+        'country_code': country_code,
+        'subdivision_code': (str(subdivisions).strip().upper() if subdivisions else None),
+    }
+
+
+def _fetch_public_holidays(country_code, year):
+    url = f'https://date.nager.at/api/v3/PublicHolidays/{int(year)}/{country_code}'
+    r = requests.get(url, timeout=15)
+    r.raise_for_status()
+    payload = r.json()
+    return payload if isinstance(payload, list) else []
+
+
+def _sync_public_holiday_events(term):
+    cfg = _public_holiday_settings()
+    if not cfg['enabled']:
+        return
+    break_days = max(0, int(term.holiday_break_days or 0))
+    range_end = term.end_date + timedelta(days=break_days)
+    years = sorted({term.start_date.year, range_end.year})
+    for yr in years:
+        try:
+            holidays = _fetch_public_holidays(cfg['country_code'], yr)
+        except Exception:
+            logger.warning("Public holiday sync failed for %s %s", cfg['country_code'], yr)
+            continue
+        for item in holidays:
+            day_raw = item.get('date')
+            if not day_raw:
+                continue
+            try:
+                day = date.fromisoformat(str(day_raw))
+            except Exception:
+                continue
+            if day < term.start_date or day > range_end:
+                continue
+            local_name = (item.get('localName') or item.get('name') or 'Public holiday').strip()
+            title = f"Public Holiday: {local_name} ({day.isoformat()})"
+            note = f"System-synced public holiday for {cfg['country_code']}."
+            _upsert_system_event(
+                title=title,
+                defaults={
+                    'description': note,
+                    'start_date': day,
+                    'end_date': day,
+                    'audience_roles': [],
+                    'is_published': True,
+                    'image_url': None,
+                    'created_by': None,
+                },
+            )
+
+
+def _term_system_event_title(term, kind):
+    prefix = f"Academic Term {term.term_number} {term.academic_year}"
+    if kind == 'start':
+        return f"{prefix} begins"
+    if kind == 'end':
+        return f"{prefix} ends"
+    if kind == 'break':
+        return f"{prefix} holiday break"
+    raise ValueError(f"Unsupported term event kind: {kind}")
+
+
+def _upsert_system_event(*, title, defaults):
+    qs = Event.objects.filter(title=title, created_by__isnull=True).order_by('id')
+    obj = qs.first()
+    if obj is None:
+        return Event.objects.create(title=title, **defaults)
+    changed = []
+    for field, value in defaults.items():
+        if getattr(obj, field) != value:
+            setattr(obj, field, value)
+            changed.append(field)
+    if changed:
+        obj.save(update_fields=changed + ['updated_at'])
+    dup_ids = list(qs.values_list('id', flat=True)[1:])
+    if dup_ids:
+        Event.objects.filter(id__in=dup_ids).delete()
+    return obj
+
+
+def _sync_term_calendar_events(term):
+    base_note = (
+        f"System-generated from Academic Term {term.term_number}/{term.academic_year}. "
+        "Edit the term to keep this calendar entry aligned."
+    )
+    start_title = _term_system_event_title(term, 'start')
+    end_title = _term_system_event_title(term, 'end')
+    break_title = _term_system_event_title(term, 'break')
+
+    _upsert_system_event(
+        title=start_title,
+        defaults={
+            'description': f"{base_note} Classes open on this date.",
+            'start_date': term.start_date,
+            'end_date': term.start_date,
+            'audience_roles': [],
+            'is_published': True,
+            'image_url': None,
+            'created_by': None,
+        },
+    )
+    _upsert_system_event(
+        title=end_title,
+        defaults={
+            'description': f"{base_note} Teaching for the term closes on this date.",
+            'start_date': term.end_date,
+            'end_date': term.end_date,
+            'audience_roles': [],
+            'is_published': True,
+            'image_url': None,
+            'created_by': None,
+        },
+    )
+
+    break_days = max(0, int(term.holiday_break_days or 0))
+    if break_days > 0:
+        break_start = term.end_date + timedelta(days=1)
+        break_end = term.end_date + timedelta(days=break_days)
+        _upsert_system_event(
+            title=break_title,
+            defaults={
+                'description': f"{base_note} Holiday break after term close.",
+                'start_date': break_start,
+                'end_date': break_end,
+                'audience_roles': [],
+                'is_published': True,
+                'image_url': None,
+                'created_by': None,
+            },
+        )
+    else:
+        Event.objects.filter(title=break_title, created_by__isnull=True).delete()
+    _sync_public_holiday_events(term)
+
+
+def _term_overlaps_existing(*, start_date, end_date, exclude_term_id=None):
+    qs = AcademicTerm.objects.all()
+    if exclude_term_id is not None:
+        qs = qs.exclude(id=exclude_term_id)
+    return qs.filter(start_date__lte=end_date, end_date__gte=start_date).exists()
+
+
+def _serialize_term_calendar(term):
+    today = timezone.localdate()
+    weekends = []
+    instructional_days = 0
+    cursor = term.start_date
+    while cursor <= term.end_date:
+        if cursor.weekday() >= 5:
+            weekends.append(cursor.isoformat())
+        else:
+            instructional_days += 1
+        cursor += timedelta(days=1)
+
+    break_days = max(0, int(term.holiday_break_days or 0))
+    break_start = term.end_date + timedelta(days=1) if break_days > 0 else None
+    break_end = term.end_date + timedelta(days=break_days) if break_days > 0 else None
+
+    events_qs = Event.objects.filter(
+        start_date__lte=(break_end or term.end_date),
+    ).filter(
+        Q(end_date__isnull=True, start_date__gte=term.start_date) | Q(end_date__gte=term.start_date)
+    ).order_by('start_date', 'end_date', 'title')
+
+    timetable_qs = Timetable.objects.filter(is_active=True, academic_year=term.academic_year, term_number=term.term_number).order_by('school_class__level', 'section', 'id')
+
+    if today < term.start_date:
+        status_label = 'upcoming'
+    elif today > term.end_date:
+        status_label = 'completed'
+    else:
+        status_label = 'active'
+
+    return {
+        'term': AcademicTermSerializer(term).data,
+        'status': status_label,
+        'today': today.isoformat(),
+        'today_in_term': term.start_date <= today <= term.end_date,
+        'instructional_days': instructional_days,
+        'weekend_days': weekends,
+        'weekend_count': len(weekends),
+        'holiday_break': {
+            'days': break_days,
+            'start_date': break_start.isoformat() if break_start else None,
+            'end_date': break_end.isoformat() if break_end else None,
+        },
+        'events': EventSerializer(events_qs, many=True).data,
+        'timetables': TimetableSerializer(timetable_qs, many=True).data,
+    }
 
 
 def _is_placeholder_twilio_sid(value):
@@ -1525,8 +1893,8 @@ def has_promotion_permission(user):
 def has_term_management_permission(user):
     try:
         r = user.profile.role
-        # Term management is reserved for the special admin role only.
-        return user.is_superuser or r == 'superadmin'
+        # Term management is reserved for super admin and the special admin roles.
+        return user.is_superuser or r == 'superadmin' or is_admin_role(r)
     except UserProfile.DoesNotExist:
         return user.is_superuser # Fallback for users without a profile
 
@@ -2832,7 +3200,20 @@ class ClassChargeViewSet(viewsets.ModelViewSet):
         return [permissions.IsAdminUser()]
 
     def perform_create(self, serializer):
-        obj = serializer.save(created_by=self.request.user)
+        data = serializer.validated_data
+        active_term = _current_term()
+        year = data.get('academic_year')
+        term_number = data.get('term_number')
+        if year is None and active_term:
+            year = active_term.academic_year
+        if term_number is None and active_term:
+            term_number = active_term.term_number
+        if year is not None and term_number is not None:
+            term_obj = _require_active_term_target(year, term_number, label='term_number')
+            due_date = data.get('due_date')
+            if due_date is not None and not _term_covers_range(term_obj, due_date):
+                raise DRFValidationError({'due_date': f'due_date must fall within Term {term_obj.term_number} {term_obj.academic_year}.'})
+        obj = serializer.save(created_by=self.request.user, academic_year=year, term_number=term_number)
         SecurityAuditLog.objects.create(
             user=self.request.user,
             event_type='CLASS_CHARGE_CREATED',
@@ -2841,7 +3222,15 @@ class ClassChargeViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        obj = serializer.save()
+        data = serializer.validated_data
+        year = data.get('academic_year', serializer.instance.academic_year)
+        term_number = data.get('term_number', serializer.instance.term_number)
+        if year is not None and term_number is not None:
+            term_obj = _require_active_term_target(year, term_number, label='term_number')
+            due_date = data.get('due_date', serializer.instance.due_date)
+            if due_date is not None and not _term_covers_range(term_obj, due_date):
+                raise DRFValidationError({'due_date': f'due_date must fall within Term {term_obj.term_number} {term_obj.academic_year}.'})
+        obj = serializer.save(academic_year=year, term_number=term_number)
         SecurityAuditLog.objects.create(
             user=self.request.user,
             event_type='CLASS_CHARGE_UPDATED',
@@ -2994,9 +3383,12 @@ class MarkViewSet(viewsets.ModelViewSet):
             try:
                 year = int(serializer.validated_data.get('year'))
                 term = int(serializer.validated_data.get('term'))
+                _require_active_term_target(year, term)
                 if AcademicTerm.objects.filter(academic_year=year, term_number=term, marks_locked=True).exists():
                     raise PermissionDenied(f'Marks are locked for Term {term} - {year}.')
             except PermissionDenied:
+                raise
+            except DRFValidationError:
                 raise
             except Exception:
                 pass
@@ -3033,6 +3425,7 @@ class MarkViewSet(viewsets.ModelViewSet):
         term = int(term)
         if term not in [1, 2, 3]:
             return Response({'detail': 'term must be 1..3.'}, status=status.HTTP_400_BAD_REQUEST)
+        _require_active_term_target(year, term)
 
         if AcademicTerm.objects.filter(academic_year=year, term_number=term, marks_locked=True).exists():
             return Response({'detail': f'Marks are locked for Term {term} - {year}.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -3103,7 +3496,7 @@ class MarkViewSet(viewsets.ModelViewSet):
         return Response({'saved': saved})
 
 class AttendanceViewSet(viewsets.ModelViewSet):
-    queryset = Attendance.objects.all()
+    queryset = Attendance.objects.select_related('student').all()
     serializer_class = AttendanceSerializer
 
     def get_permissions(self):
@@ -3117,6 +3510,10 @@ class AttendanceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         role = get_role(self.request.user)
+        include_archived = _truthy(self.request.query_params.get('include_archived'))
+
+        if not include_archived:
+            qs = qs.filter(is_archived=False)
 
         # Optional date filter for dashboards.
         d = (self.request.query_params.get('date') or '').strip()
@@ -3125,6 +3522,12 @@ class AttendanceViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(date=date.fromisoformat(d))
             except Exception:
                 pass
+        year_q = (self.request.query_params.get('year') or '').strip()
+        term_q = (self.request.query_params.get('term') or '').strip()
+        if year_q.isdigit():
+            qs = qs.filter(academic_year=int(year_q))
+        if term_q.isdigit():
+            qs = qs.filter(term_number=int(term_q))
 
         if role == 'teacher':
             lvl, sec = get_teacher_scope(self.request.user)
@@ -3139,7 +3542,16 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(marked_by=self.request.user)
+        marked_date = serializer.validated_data.get('date') or timezone.localdate()
+        term = _exact_term_for_date(marked_date)
+        if not term or term.is_archived:
+            raise DRFValidationError({'date': 'Attendance can only be recorded for a live configured term date.'})
+        serializer.save(
+            marked_by=self.request.user,
+            academic_year=(term.academic_year if term else None),
+            term_number=(term.term_number if term else None),
+            is_archived=(bool(term.is_archived) if term else False),
+        )
 
     @action(detail=False, methods=['post'], url_path='bulk-upsert', permission_classes=[permissions.IsAuthenticated])
     def bulk_upsert(self, request):
@@ -3159,6 +3571,9 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             d = date.fromisoformat(str(d_raw)) if d_raw else timezone.localdate()
         except Exception:
             return Response({'detail': 'Invalid date.'}, status=status.HTTP_400_BAD_REQUEST)
+        att_term = _exact_term_for_date(d)
+        if not att_term or att_term.is_archived:
+            return Response({'detail': 'Attendance can only be recorded for a live configured term date.'}, status=status.HTTP_400_BAD_REQUEST)
         if not isinstance(items, list) or not items:
             return Response({'detail': 'items[] is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3192,11 +3607,22 @@ class AttendanceViewSet(viewsets.ModelViewSet):
                     a = existing[0]
                     a.status = status_v
                     a.marked_by = request.user
-                    a.save(update_fields=['status', 'marked_by'])
+                    a.academic_year = att_term.academic_year if att_term else a.academic_year
+                    a.term_number = att_term.term_number if att_term else a.term_number
+                    a.is_archived = bool(att_term.is_archived) if att_term else a.is_archived
+                    a.save(update_fields=['status', 'marked_by', 'academic_year', 'term_number', 'is_archived'])
                     if len(existing) > 1:
                         Attendance.objects.filter(id__in=[x.id for x in existing[1:]]).delete()
                 else:
-                    Attendance.objects.create(student_id=sid, date=d, status=status_v, marked_by=request.user)
+                    Attendance.objects.create(
+                        student_id=sid,
+                        date=d,
+                        status=status_v,
+                        marked_by=request.user,
+                        academic_year=(att_term.academic_year if att_term else None),
+                        term_number=(att_term.term_number if att_term else None),
+                        is_archived=(bool(att_term.is_archived) if att_term else False),
+                    )
                 saved += 1
 
         SecurityAuditLog.objects.create(
@@ -3433,7 +3859,7 @@ class TeacherAttendanceViewSet(viewsets.ModelViewSet):
         return Response(TeacherAttendanceSerializer(qs, many=True).data)
 
 class TimetableViewSet(viewsets.ModelViewSet):
-    queryset = Timetable.objects.all()
+    queryset = Timetable.objects.select_related('school_class').all()
     serializer_class = TimetableSerializer
 
     def get_permissions(self):
@@ -3447,24 +3873,39 @@ class TimetableViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         role = get_role(self.request.user)
+        active_term = _current_term()
+        year_q = (self.request.query_params.get('academic_year') or '').strip()
+        term_q = (self.request.query_params.get('term_number') or '').strip()
+        target_year = int(year_q) if year_q.isdigit() else (active_term.academic_year if active_term else None)
+        target_term = int(term_q) if term_q.isdigit() else (active_term.term_number if active_term else None)
 
         # Optional filters for admins/reception to find a timetable quickly.
         class_id = (self.request.query_params.get('school_class') or '').strip()
         section_q = self.request.query_params.get('section', None)
         section = (section_q or '').strip().upper()
+        is_active_q = self.request.query_params.get('is_active')
+        if is_active_q is not None:
+            qs = qs.filter(is_active=_truthy(is_active_q))
+        else:
+            qs = qs.filter(is_active=True)
+        if target_year and target_term:
+            qs = qs.filter(
+                Q(academic_year=target_year, term_number=target_term)
+                | Q(academic_year__isnull=True, term_number__isnull=True)
+            )
         if role == 'superadmin' or is_admin_role(role) or role == 'reception':
             if class_id.isdigit():
                 qs = qs.filter(school_class_id=int(class_id))
             # If the client provided the section param, filter even if it's blank.
             if section_q is not None:
                 qs = qs.filter(section=section)
-            return qs
+            return qs.order_by('school_class__level', 'section', '-academic_year', '-term_number', 'id')
 
         if role == 'teacher':
             lvl, sec = get_teacher_scope(self.request.user)
             if not lvl or not sec:
                 return qs.none()
-            return qs.filter(school_class__level=lvl, section=sec)
+            return qs.filter(school_class__level=lvl, section=sec).order_by('-academic_year', '-term_number', 'id')
 
         if role == 'parent':
             phone = getattr(getattr(self.request.user, 'profile', None), 'phone_number', None)
@@ -3477,20 +3918,26 @@ class TimetableViewSet(viewsets.ModelViewSet):
             q = Q()
             for (cid, sec) in pairs:
                 q |= Q(school_class_id=cid, section=sec)
-            return qs.filter(q)
+            return qs.filter(q).order_by('-academic_year', '-term_number', 'id')
 
         # Student accounts are not linked to Student records yet.
         if role == 'student':
             stu, lvl, sec = get_student_scope(self.request.user)
             if not lvl or sec is None or not stu or not stu.current_class_id:
                 return qs.none()
-            return qs.filter(school_class_id=stu.current_class_id, section=sec)
+            return qs.filter(school_class_id=stu.current_class_id, section=sec).order_by('-academic_year', '-term_number', 'id')
 
         return qs.none()
 
     @action(detail=False, methods=['get'], url_path='mine')
     def mine(self, request):
-        data = TimetableSerializer(self.get_queryset().order_by('school_class__level', 'section'), many=True).data
+        chosen: Dict[tuple[int, str], Timetable] = {}
+        rows = list(cast(Any, self.get_queryset()))
+        for row in rows:
+            key = (row.school_class_id, (row.section or '').strip().upper())
+            if key not in chosen:
+                chosen[key] = row
+        data = TimetableSerializer(list(chosen.values()), many=True).data
         return Response(data)
 
     @action(detail=False, methods=['get'], url_path=r'for-class/(?P<class_id>\d+)/(?P<section>[A-Za-z])')
@@ -3499,7 +3946,24 @@ class TimetableViewSet(viewsets.ModelViewSet):
         if role not in (['superadmin', 'reception', 'teacher', 'parent'] + list(ADMIN_ROLES)):
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
         section = (section or '').upper()
-        tt = Timetable.objects.filter(school_class_id=int(class_id), section=section).first()
+        active_term = _current_term()
+        tt = None
+        if active_term:
+            tt = Timetable.objects.filter(
+                school_class_id=int(class_id),
+                section=section,
+                academic_year=active_term.academic_year,
+                term_number=active_term.term_number,
+                is_active=True,
+            ).order_by('id').first()
+        if tt is None:
+            tt = Timetable.objects.filter(
+                school_class_id=int(class_id),
+                section=section,
+                academic_year__isnull=True,
+                term_number__isnull=True,
+                is_active=True,
+            ).order_by('id').first()
         if not tt:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(TimetableSerializer(tt).data)
@@ -3512,6 +3976,8 @@ class TimetableViewSet(viewsets.ModelViewSet):
 
         school_class = request.data.get('school_class')
         section = (request.data.get('section') or '').strip().upper()
+        academic_year = request.data.get('academic_year')
+        term_number = request.data.get('term_number')
         slots = request.data.get('slots', None)
         cells = request.data.get('cells', None)
 
@@ -3522,17 +3988,26 @@ class TimetableViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'section must be a single letter (or leave blank if your school has no sections).'}, status=status.HTTP_400_BAD_REQUEST)
         if slots is None or cells is None:
             return Response({'detail': 'slots and cells are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        active_term = _current_term()
+        if not str(academic_year or '').isdigit() and active_term:
+            academic_year = active_term.academic_year
+        if not str(term_number or '').isdigit() and active_term:
+            term_number = active_term.term_number
+        academic_year = int(academic_year) if str(academic_year or '').isdigit() else None
+        term_number = int(term_number) if str(term_number or '').isdigit() else None
 
         obj, created = Timetable.objects.update_or_create(
             school_class_id=int(school_class),
             section=section,
-            defaults={'slots': slots, 'cells': cells},
+            academic_year=academic_year,
+            term_number=term_number,
+            defaults={'slots': slots, 'cells': cells, 'is_active': True},
         )
         SecurityAuditLog.objects.create(
             user=request.user,
             event_type='TIMETABLE_UPSERTED',
             ip_address=get_client_ip(request),
-            details=f'Timetable saved for class_id={school_class} section={section} (created={created}).',
+            details=f'Timetable saved for class_id={school_class} section={section} term={term_number}/{academic_year} (created={created}).',
         )
         return Response(TimetableSerializer(obj).data, status=status.HTTP_200_OK)
 
@@ -4632,6 +5107,13 @@ class AcademicTermViewSet(viewsets.ViewSet):
         qs = AcademicTerm.objects.all().order_by('-academic_year', '-term_number', '-start_date')
         return Response(AcademicTermSerializer(qs, many=True).data)
 
+    @action(detail=False, methods=['get'], url_path='active-calendar')
+    def active_calendar(self, request):
+        term = AcademicTerm.objects.filter(is_archived=False).order_by('-academic_year', '-term_number', '-start_date').first()
+        if not term:
+            return Response({'detail': 'No active term found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(_serialize_term_calendar(term))
+
     @action(detail=False, methods=['post'], url_path='start-new')
     def start_new_term(self, request):
         academic_year = request.data.get('academic_year')
@@ -4647,10 +5129,22 @@ class AcademicTermViewSet(viewsets.ViewSet):
             return Response({'detail': 'Missing required term details.'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
+            academic_year = int(academic_year)
+            term_number = int(term_number)
+            holiday_break_days = max(0, int(holiday_break_days or 0))
             start_date = date.fromisoformat(start_date_str)
             end_date = date.fromisoformat(end_date_str)
-        except ValueError:
-            return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Invalid term payload. Use numeric year/term and YYYY-MM-DD dates.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if term_number not in [1, 2, 3]:
+            return Response({'detail': 'term_number must be 1, 2, or 3.'}, status=status.HTTP_400_BAD_REQUEST)
+        if end_date < start_date:
+            return Response({'detail': 'end_date must be after start_date.'}, status=status.HTTP_400_BAD_REQUEST)
+        if AcademicTerm.objects.filter(academic_year=academic_year, term_number=term_number).exists():
+            return Response({'detail': 'That academic year and term number already exist.'}, status=status.HTTP_400_BAD_REQUEST)
+        if _term_overlaps_existing(start_date=start_date, end_date=end_date):
+            return Response({'detail': 'The new term overlaps an existing term. Edit the existing term instead.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Archive previous term
         current_active_term = AcademicTerm.objects.filter(is_archived=False).first()
@@ -4713,11 +5207,17 @@ class AcademicTermViewSet(viewsets.ViewSet):
             is_archived=False # New term is active
         )
         logger.info(f"Created new term: {new_term}")
+        _sync_term_calendar_events(new_term)
 
-        # Reset daily attendance for all students (assuming attendance is per term)
-        # A more robust solution might involve archiving old attendance records rather than deleting.
-        Attendance.objects.all().delete()
-        logger.info("Reset all attendance records for the new term.")
+        # Preserve prior attendance history by archiving it into the completed term.
+        if current_active_term:
+            Attendance.objects.filter(is_archived=False, academic_year__isnull=True, term_number__isnull=True).update(
+                academic_year=current_active_term.academic_year,
+                term_number=current_active_term.term_number,
+                is_archived=True,
+            )
+            Attendance.objects.filter(is_archived=False).update(is_archived=True)
+            logger.info("Archived active attendance records for the completed term.")
 
         # Auto-generate invoices
         if auto_generate_invoices:
@@ -4799,10 +5299,18 @@ class AcademicTermViewSet(viewsets.ViewSet):
             if f in data:
                 setattr(term, f, data.get(f))
 
+        try:
+            term.holiday_break_days = max(0, int(term.holiday_break_days or 0))
+        except (TypeError, ValueError):
+            return Response({'detail': 'holiday_break_days must be a whole number.'}, status=status.HTTP_400_BAD_REQUEST)
+
         if term.end_date and term.start_date and term.end_date < term.start_date:
             return Response({'detail': 'end_date must be after start_date.'}, status=status.HTTP_400_BAD_REQUEST)
+        if _term_overlaps_existing(start_date=term.start_date, end_date=term.end_date, exclude_term_id=term.id):
+            return Response({'detail': 'This term overlaps another saved term.'}, status=status.HTTP_400_BAD_REQUEST)
 
         term.save()
+        _sync_term_calendar_events(term)
         SecurityAuditLog.objects.create(
             user=request.user,
             event_type='TERM_EDITED',
@@ -4810,6 +5318,29 @@ class AcademicTermViewSet(viewsets.ViewSet):
             details=f'Edited term id={term.id} year={term.academic_year} term={term.term_number}.',
         )
         return Response(AcademicTermSerializer(term).data)
+
+    @action(detail=True, methods=['get'], url_path='calendar')
+    def calendar(self, request, pk=None):
+        try:
+            term = AcademicTerm.objects.get(pk=pk)
+        except AcademicTerm.DoesNotExist:
+            return Response({'detail': 'Term not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(_serialize_term_calendar(term))
+
+    @action(detail=True, methods=['post'], url_path='sync-public-holidays')
+    def sync_public_holidays(self, request, pk=None):
+        try:
+            term = AcademicTerm.objects.get(pk=pk)
+        except AcademicTerm.DoesNotExist:
+            return Response({'detail': 'Term not found.'}, status=status.HTTP_404_NOT_FOUND)
+        _sync_public_holiday_events(term)
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='TERM_PUBLIC_HOLIDAYS_SYNCED',
+            ip_address=get_client_ip(request),
+            details=f'Synced public holidays for term id={term.id} year={term.academic_year} term={term.term_number}.',
+        )
+        return Response(_serialize_term_calendar(term), status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['delete'], url_path='delete')
     def delete_term(self, request, pk=None): 
@@ -8580,70 +9111,9 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                     'charge_items': [],
                 }
 
-            # Opening balance (credit +, arrears -) from previous terms in same year.
-            opening = Decimal('0.00')
-            for tm in range(1, term):
-                inv_prev = Invoice.objects.filter(student=stu, academic_year=year, term_number=tm).first()
-                base_prev = None
-                if inv_prev is not None and inv_prev.amount_due is not None:
-                    try:
-                        base_prev = Decimal(str(inv_prev.amount_due))
-                    except Exception:
-                        base_prev = None
-                if base_prev is None:
-                    fs_prev = FeeStructure.objects.filter(school_class_id=stu.current_class_id, year=year, term=tm).first()
-                    if fs_prev:
-                        base_prev = Decimal(str(fs_prev.amount))
-                    else:
-                        try:
-                            base_prev = (Decimal(str(stu.current_class.annual_fee)) / Decimal('3')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                        except Exception:
-                            base_prev = Decimal('0.00')
-
-                sec_prev = (stu.section or '').strip().upper()
-                cq_prev = ClassCharge.objects.filter(
-                    school_class_id=stu.current_class_id,
-                    is_active=True,
-                    is_published=True,
-                ).filter(Q(section__isnull=True) | Q(section='') | Q(section=sec_prev)).filter(
-                    Q(academic_year__isnull=True) | Q(academic_year=year)
-                ).filter(
-                    Q(term_number__isnull=True) | Q(term_number=tm)
-                )
-                extras_prev = cq_prev.aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-                adj_prev = InvoiceAdjustment.objects.filter(
-                    student=stu,
-                    academic_year=year,
-                    term_number=tm,
-                    is_active=True,
-                ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-                due_prev = (Decimal(str(base_prev)) + Decimal(str(extras_prev)) + Decimal(str(adj_prev))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                paid_prev = Payment.objects.filter(
-                    student=stu,
-                    academic_year=year,
-                    term_number=tm,
-                    status__in=['received', 'approved'],
-                ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-                opening = (opening + Decimal(str(paid_prev)) - due_prev).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-            inv = Invoice.objects.filter(student=stu, academic_year=year, term_number=term).first()
-            base_due = Decimal(str(inv.amount_due)) if inv else None
-            if base_due is None:
-                fs = FeeStructure.objects.filter(school_class_id=stu.current_class_id, year=year, term=term).first()
-                if fs:
-                    base_due = Decimal(str(fs.amount))
-                else:
-                    try:
-                        base_due = (Decimal(str(stu.current_class.annual_fee)) / Decimal('3')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                    except Exception:
-                        base_due = Decimal('0.00')
-
-            paid_in_term = Payment.objects.filter(
-                student=stu,
-                academic_year=year,
-                term_number=term,
-                status__in=['received', 'approved'],
-            ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+            opening = _opening_balance_before_term(stu, year, term)
+            base_due = _base_due_for_term(stu, year, term)
+            paid_in_term = _payments_for_term(stu, year, term)
 
             sec = (stu.section or '').strip().upper()
             cq = ClassCharge.objects.filter(
@@ -8657,13 +9127,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             ).order_by('due_date', 'title')
             items = ClassChargeSerializer(cq, many=True).data
             extras_total = sum([Decimal(str(c.get('amount') or 0)) for c in items], Decimal('0.00'))
-
-            adj_now = InvoiceAdjustment.objects.filter(
-                student=stu,
-                academic_year=year,
-                term_number=term,
-                is_active=True,
-            ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+            adj_now = _adjustments_for_term(stu, year, term)
             term_due = (base_due + extras_total + Decimal(str(adj_now))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
             credit_bf = opening if opening > 0 else Decimal('0.00')
@@ -8746,66 +9210,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             else:
                 return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Reuse the ledger math per term.
-        def term_base_due(stu0, yr, tm):
-            if not stu0 or not stu0.current_class_id:
-                return Decimal('0.00')
-            inv = Invoice.objects.filter(student=stu0, academic_year=yr, term_number=tm).first()
-            if inv is not None and inv.amount_due is not None:
-                try:
-                    return Decimal(str(inv.amount_due))
-                except Exception:
-                    pass
-            fs = FeeStructure.objects.filter(school_class_id=stu0.current_class_id, year=yr, term=tm).first()
-            if fs:
-                try:
-                    return Decimal(str(fs.amount))
-                except Exception:
-                    return Decimal('0.00')
-            try:
-                return (Decimal(str(stu0.current_class.annual_fee)) / Decimal('3')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal('0.00')
-
-        def term_extras_due(stu0, yr, tm):
-            if not stu0 or not stu0.current_class_id:
-                return Decimal('0.00')
-            sec = (stu0.section or '').strip().upper()
-            cq = ClassCharge.objects.filter(
-                school_class_id=stu0.current_class_id,
-                is_active=True,
-                is_published=True,
-            ).filter(Q(section__isnull=True) | Q(section='') | Q(section=sec)).filter(
-                Q(academic_year__isnull=True) | Q(academic_year=yr)
-            ).filter(
-                Q(term_number__isnull=True) | Q(term_number=tm)
-            )
-            v = cq.aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-            try:
-                return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal('0.00')
-
-        def term_adjustments(stu0, yr, tm):
-            v = InvoiceAdjustment.objects.filter(student=stu0, academic_year=yr, term_number=tm, is_active=True).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-            try:
-                return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal('0.00')
-
-        def payments_sum(stu0, yr, tm):
-            v = Payment.objects.filter(student=stu0, academic_year=yr, term_number=tm, status__in=['received', 'approved']).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-            try:
-                return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal('0.00')
-
-        opening = Decimal('0.00')
+        opening = _opening_balance_before_term(stu, year, 1)
         terms = []
         for tm in [1, 2, 3]:
-            # Opening is carried from prior term closing.
-            term_due = (term_base_due(stu, year, tm) + term_extras_due(stu, year, tm) + term_adjustments(stu, year, tm)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            paid_now = payments_sum(stu, year, tm)
+            term_due = (_base_due_for_term(stu, year, tm) + _class_extras_for_term(stu, year, tm) + _adjustments_for_term(stu, year, tm)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            paid_now = _payments_for_term(stu, year, tm)
 
             credit_bf = opening if opening > 0 else Decimal('0.00')
             arrears_bf = (-opening) if opening < 0 else Decimal('0.00')
@@ -8819,7 +9228,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 'term_number': tm,
                 'opening_balance': str(opening),
                 'term_due': str(term_due),
-                'adjustments_total': str(term_adjustments(stu, year, tm)),
+                'adjustments_total': str(_adjustments_for_term(stu, year, tm)),
                 'paid_in_term': str(paid_now),
                 'paid_applied': str(paid_applied),
                 'balance_due': str(balance_due),
@@ -8873,86 +9282,14 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if term not in [1, 2, 3]:
             return Response({'detail': 'term must be 1..3.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        def term_base_due(stu, yr, tm):
-            if not stu or not stu.current_class_id:
-                return Decimal('0.00')
-            inv = Invoice.objects.filter(student=stu, academic_year=yr, term_number=tm).first()
-            if inv is not None and inv.amount_due is not None:
-                try:
-                    return Decimal(str(inv.amount_due))
-                except Exception:
-                    pass
-            fs = FeeStructure.objects.filter(school_class_id=stu.current_class_id, year=yr, term=tm).first()
-            if fs:
-                try:
-                    return Decimal(str(fs.amount))
-                except Exception:
-                    return Decimal('0.00')
-            try:
-                return (Decimal(str(stu.current_class.annual_fee)) / Decimal('3')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal('0.00')
-
-        def term_extras_due(stu, yr, tm):
-            if not stu or not stu.current_class_id:
-                return Decimal('0.00')
-            sec = (stu.section or '').strip().upper()
-            cq = ClassCharge.objects.filter(
-                school_class_id=stu.current_class_id,
-                is_active=True,
-                is_published=True,
-            ).filter(Q(section__isnull=True) | Q(section='') | Q(section=sec)).filter(
-                Q(academic_year__isnull=True) | Q(academic_year=yr)
-            ).filter(
-                Q(term_number__isnull=True) | Q(term_number=tm)
-            )
-            v = cq.aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-            try:
-                return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal('0.00')
-
-        def term_adjustments(stu, yr, tm):
-            if not stu:
-                return Decimal('0.00')
-            v = InvoiceAdjustment.objects.filter(
-                student=stu,
-                academic_year=yr,
-                term_number=tm,
-                is_active=True,
-            ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-            try:
-                return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal('0.00')
-
-        def payments_sum(stu, yr, tm):
-            if not stu:
-                return Decimal('0.00')
-            v = Payment.objects.filter(
-                student=stu,
-                academic_year=yr,
-                term_number=tm,
-                status__in=['received', 'approved'],
-            ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-            try:
-                return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal('0.00')
-
         out = []
         students = Student.objects.select_related('current_class').all()
         for stu in students:
             inv_now = Invoice.objects.filter(student=stu, academic_year=year, term_number=term).first()
-            opening = Decimal('0.00')
-            for tm in range(1, term):
-                due = (term_base_due(stu, year, tm) + term_extras_due(stu, year, tm) + term_adjustments(stu, year, tm)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                paid = payments_sum(stu, year, tm)
-                opening = (opening + paid - due).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-            adj_now = term_adjustments(stu, year, term)
-            term_due = (term_base_due(stu, year, term) + term_extras_due(stu, year, term) + adj_now).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            paid_now = payments_sum(stu, year, term)
+            opening = _opening_balance_before_term(stu, year, term)
+            adj_now = _adjustments_for_term(stu, year, term)
+            term_due = (_base_due_for_term(stu, year, term) + _class_extras_for_term(stu, year, term) + adj_now).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            paid_now = _payments_for_term(stu, year, term)
 
             credit_bf = opening if opening > 0 else Decimal('0.00')
             arrears_bf = (-opening) if opening < 0 else Decimal('0.00')
@@ -9196,6 +9533,9 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(data)
 
     def perform_create(self, serializer):
+        start_date = serializer.validated_data.get('start_date')
+        end_date = serializer.validated_data.get('end_date') or start_date
+        _require_term_window(start_date=start_date, end_date=end_date, allow_holiday_break=True, label='start_date')
         obj = serializer.save(created_by=self.request.user)
         # Notify audience roles (or all users if no roles selected).
         try:
@@ -9213,6 +9553,9 @@ class EventViewSet(viewsets.ModelViewSet):
             pass
 
     def perform_update(self, serializer):
+        start_date = serializer.validated_data.get('start_date', serializer.instance.start_date)
+        end_date = serializer.validated_data.get('end_date', serializer.instance.end_date) or start_date
+        _require_term_window(start_date=start_date, end_date=end_date, allow_holiday_break=True, label='start_date')
         obj = serializer.save()
         try:
             aud = obj.audience_roles or []

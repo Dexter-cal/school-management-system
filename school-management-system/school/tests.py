@@ -3,7 +3,7 @@
 # pylint: disable=all
 # type: ignore[attr-defined]  # DRF test client response typing incomplete
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, cast
 from unittest.mock import Mock, patch
@@ -26,6 +26,7 @@ from .models import (
     DocumentDraft,
     Expense,
     ExpenseCategory,
+    Event,
     FeePromise,
     FeeReminderLog,
     Invoice,
@@ -40,6 +41,7 @@ from .models import (
     Student,
     StudentGuardianLink,
     SystemSetting,
+    Timetable,
     Notification,
     UserProfile,
 )
@@ -919,6 +921,404 @@ class FinanceWorkflowTests(BaseSchoolTestCase):
         notices = Notification.objects.filter(user=self.bursar, event_key__startswith='cashier_handover:')
         self.assertEqual(notices.count(), 1)
         self.assertEqual(notices.first().category, 'finance')
+
+    def test_parent_fee_view_carries_credit_from_previous_year(self):
+        self.invoice.amount_due = Decimal('300000.00')
+        self.invoice.amount_paid = Decimal('300000.00')
+        self.invoice.status = 'paid'
+        self.invoice.save(update_fields=['amount_due', 'amount_paid', 'status'])
+        Payment.objects.create(
+            student=self.student,
+            amount=Decimal('300000.00'),
+            method='cash',
+            status='received',
+            academic_year=2026,
+            term_number=1,
+            received_by=self.bursar,
+            approved_by=self.bursar,
+        )
+        self.active_term.is_archived = True
+        self.active_term.save(update_fields=['is_archived'])
+        AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=3,
+            start_date=timezone.localdate() - timedelta(days=200),
+            end_date=timezone.localdate() - timedelta(days=120),
+            is_archived=True,
+        )
+        AcademicTerm.objects.create(
+            academic_year=2027,
+            term_number=1,
+            start_date=timezone.localdate(),
+            end_date=timezone.localdate() + timedelta(days=90),
+            is_archived=False,
+        )
+        Invoice.objects.create(
+            student=self.student,
+            academic_year=2026,
+            term_number=3,
+            amount_due=Decimal('300000.00'),
+            amount_paid=Decimal('500000.00'),
+            status='paid',
+        )
+        Payment.objects.create(
+            student=self.student,
+            amount=Decimal('500000.00'),
+            method='cash',
+            status='received',
+            academic_year=2026,
+            term_number=3,
+            received_by=self.bursar,
+            approved_by=self.bursar,
+        )
+        Invoice.objects.create(
+            student=self.student,
+            academic_year=2027,
+            term_number=1,
+            amount_due=Decimal('300000.00'),
+            amount_paid=Decimal('0.00'),
+            status='unpaid',
+        )
+
+        self.client.force_authenticate(user=self.parent_user)
+        response = self.client.get('/api/invoices/mine/')
+        self.assertEqual(response.status_code, 200)
+        entry = response.data['students'][0]
+        self.assertEqual(entry['credit_brought_forward'], '200000.00')
+        self.assertEqual(entry['paid'], '200000.00')
+        self.assertEqual(entry['balance'], '100000.00')
+
+
+class AcademicTermFlowTests(BaseSchoolTestCase):
+    def setUp(self):
+        self.admin = self.create_user(
+            username='termadmin',
+            password='TermAdmin123!',
+            role='admin',
+            phone_number='0705111000',
+            email_address='termadmin@example.com',
+        )
+        self.school_class = SchoolClass.objects.create(
+            level='P.4',
+            sections=['A'],
+            annual_fee=Decimal('600000.00'),
+            max_students_per_section=40,
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_start_new_term_creates_calendar_events_and_active_calendar(self):
+        response = self.client.post(
+            '/api/terms/start-new/',
+            {
+                'academic_year': 2026,
+                'term_number': 2,
+                'start_date': '2026-05-04',
+                'end_date': '2026-07-31',
+                'holiday_break_days': 14,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        term_id = response.data['term']['id']
+
+        titles = set(Event.objects.values_list('title', flat=True))
+        self.assertIn('Academic Term 2 2026 begins', titles)
+        self.assertIn('Academic Term 2 2026 ends', titles)
+        self.assertIn('Academic Term 2 2026 holiday break', titles)
+
+        calendar_response = self.client.get('/api/terms/active-calendar/')
+        self.assertEqual(calendar_response.status_code, 200)
+        self.assertEqual(calendar_response.data['term']['id'], term_id)
+        self.assertEqual(calendar_response.data['holiday_break']['days'], 14)
+        self.assertGreater(calendar_response.data['weekend_count'], 0)
+        self.assertTrue(any(ev['title'] == 'Academic Term 2 2026 begins' for ev in calendar_response.data['events']))
+
+    def test_edit_term_updates_calendar_event_dates(self):
+        term = AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=1,
+            start_date=date(2026, 2, 2),
+            end_date=date(2026, 4, 24),
+            holiday_break_days=7,
+            is_archived=False,
+        )
+        Event.objects.create(
+            title='Academic Term 1 2026 begins',
+            description='old',
+            start_date=term.start_date,
+            end_date=term.start_date,
+            is_published=True,
+        )
+        Event.objects.create(
+            title='Academic Term 1 2026 ends',
+            description='old',
+            start_date=term.end_date,
+            end_date=term.end_date,
+            is_published=True,
+        )
+        Event.objects.create(
+            title='Academic Term 1 2026 holiday break',
+            description='old',
+            start_date=term.end_date + timedelta(days=1),
+            end_date=term.end_date + timedelta(days=7),
+            is_published=True,
+        )
+
+        response = self.client.patch(
+            f'/api/terms/{term.pk}/edit/',
+            {
+                'start_date': '2026-02-09',
+                'end_date': '2026-05-01',
+                'holiday_break_days': 10,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        start_event = Event.objects.get(title='Academic Term 1 2026 begins')
+        end_event = Event.objects.get(title='Academic Term 1 2026 ends')
+        break_event = Event.objects.get(title='Academic Term 1 2026 holiday break')
+        self.assertEqual(start_event.start_date.isoformat(), '2026-02-09')
+        self.assertEqual(end_event.start_date.isoformat(), '2026-05-01')
+        self.assertEqual(break_event.start_date.isoformat(), '2026-05-02')
+        self.assertEqual(break_event.end_date.isoformat(), '2026-05-11')
+
+        calendar_response = self.client.get(f'/api/terms/{term.pk}/calendar/')
+        self.assertEqual(calendar_response.status_code, 200)
+        self.assertEqual(calendar_response.data['holiday_break']['end_date'], '2026-05-11')
+
+    def test_start_new_term_rejects_overlap(self):
+        AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=1,
+            start_date=date(2026, 1, 12),
+            end_date=date(2026, 4, 10),
+            holiday_break_days=0,
+            is_archived=True,
+        )
+
+        response = self.client.post(
+            '/api/terms/start-new/',
+            {
+                'academic_year': 2026,
+                'term_number': 2,
+                'start_date': '2026-04-01',
+                'end_date': '2026-06-30',
+                'holiday_break_days': 5,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('overlaps', response.data['detail'])
+
+    def test_start_new_term_archives_existing_attendance_instead_of_deleting(self):
+        active = AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=1,
+            start_date=date(2026, 2, 2),
+            end_date=date(2026, 4, 24),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+        student = self.create_student(
+            student_id='BJS-2026-ATT-1',
+            first_name='Term',
+            last_name='Archive',
+            school_class=self.school_class,
+        )
+        att = Attendance.objects.create(
+            student=student,
+            date=date(2026, 4, 20),
+            status='present',
+            marked_by=self.admin,
+        )
+
+        response = self.client.post(
+            '/api/terms/start-new/',
+            {
+                'academic_year': 2026,
+                'term_number': 2,
+                'start_date': '2026-05-05',
+                'end_date': '2026-07-30',
+                'holiday_break_days': 0,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        att.refresh_from_db()
+        self.assertTrue(att.is_archived)
+        self.assertEqual(att.academic_year, active.academic_year)
+        self.assertEqual(att.term_number, active.term_number)
+
+    def test_timetable_for_class_prefers_active_term_row(self):
+        AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=2,
+            start_date=date(2026, 5, 5),
+            end_date=date(2026, 7, 30),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+        Timetable.objects.create(
+            school_class=self.school_class,
+            section='A',
+            slots={'monday': ['08:00']},
+            cells={'monday_1': 'Legacy Math'},
+        )
+        Timetable.objects.create(
+            school_class=self.school_class,
+            section='A',
+            academic_year=2026,
+            term_number=2,
+            slots={'monday': ['08:00']},
+            cells={'monday_1': 'Term Science'},
+        )
+
+        response = self.client.get(f'/api/timetable/for-class/{self.school_class.pk}/A/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['academic_year'], 2026)
+        self.assertEqual(response.data['term_number'], 2)
+        self.assertEqual(response.data['cells']['monday_1'], 'Term Science')
+
+    @patch('school.views.requests.get')
+    def test_sync_public_holidays_creates_events(self, mock_get):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = [
+            {'date': '2026-06-09', 'localName': 'National Heroes Day', 'name': 'National Heroes Day'},
+        ]
+        mock_get.return_value = mock_response
+        SystemSetting.objects.update_or_create(
+            key='public_holiday_settings',
+            defaults={'value': {'enabled': True, 'country_code': 'UG'}},
+        )
+        term = AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=2,
+            start_date=date(2026, 5, 5),
+            end_date=date(2026, 7, 30),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+
+        response = self.client.post(f'/api/terms/{term.pk}/sync-public-holidays/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Event.objects.filter(title__icontains='National Heroes Day').exists())
+
+    def test_event_create_rejects_dates_outside_term_window(self):
+        AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=2,
+            start_date=date(2026, 5, 5),
+            end_date=date(2026, 7, 30),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+        response = self.client.post(
+            '/api/events/',
+            {
+                'title': 'Out of term event',
+                'start_date': '2026-08-20',
+                'end_date': '2026-08-20',
+                'is_published': True,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_class_charge_defaults_to_active_term_and_rejects_due_date_outside_term(self):
+        AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=2,
+            start_date=date(2026, 5, 5),
+            end_date=date(2026, 7, 30),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+        bad = self.client.post(
+            '/api/class-charges/',
+            {
+                'school_class': self.school_class.pk,
+                'section': 'A',
+                'title': 'Trip fee',
+                'amount': '25000.00',
+                'due_date': '2026-08-15',
+                'is_published': True,
+                'is_active': True,
+            },
+            format='json',
+        )
+        self.assertEqual(bad.status_code, 400)
+
+        ok = self.client.post(
+            '/api/class-charges/',
+            {
+                'school_class': self.school_class.pk,
+                'section': 'A',
+                'title': 'Workbook fee',
+                'amount': '15000.00',
+                'due_date': '2026-06-15',
+                'is_published': True,
+                'is_active': True,
+            },
+            format='json',
+        )
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(ok.data['academic_year'], 2026)
+        self.assertEqual(ok.data['term_number'], 2)
+
+    def test_attendance_rejects_date_outside_live_term(self):
+        student = self.create_student(
+            student_id='BJS-2026-ATT-2',
+            first_name='Late',
+            last_name='Entry',
+            school_class=self.school_class,
+        )
+        AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=2,
+            start_date=date(2026, 5, 5),
+            end_date=date(2026, 7, 30),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+        response = self.client.post(
+            '/api/attendance/',
+            {
+                'student': student.pk,
+                'date': '2026-08-22',
+                'status': 'present',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_marks_bulk_upsert_rejects_non_active_term(self):
+        student = self.create_student(
+            student_id='BJS-2026-MARK-1',
+            first_name='Mark',
+            last_name='Window',
+            school_class=self.school_class,
+        )
+        AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=2,
+            start_date=date(2026, 5, 5),
+            end_date=date(2026, 7, 30),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+        response = self.client.post(
+            '/api/marks/bulk-upsert/',
+            {
+                'year': 2026,
+                'term': 1,
+                'subject': 'Mathematics',
+                'items': [{'student': student.pk, 'score': 78}],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
 
 
 class ResultsHoldHistoryTests(BaseSchoolTestCase):
