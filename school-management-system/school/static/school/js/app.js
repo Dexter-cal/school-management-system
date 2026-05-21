@@ -790,7 +790,7 @@ async function getActiveTermCached() {
 async function openNewTermModal() {
     try {
         if (!(currentUser && currentUser.caps && currentUser.caps.term_manage)) {
-            flash('Only special administrators can start a new term.');
+            flash('Only the super admin can start a new term.');
             return;
         }
     } catch {}
@@ -974,7 +974,7 @@ const NAV = {
         { section: 'System' },
         { label: 'Settings', icon: 'S', page: 'settings' },
     ],
-    parent: [{ section: 'Home' }, { label: 'Child Dashboard', icon: 'D', page: 'dashboard' }, { label: 'My Fees', icon: '$', page: 'my_fees' }, { label: 'Timetable', icon: 'TT', page: 'timetable' }, { label: 'Events', icon: 'EV', page: 'events' }, { label: 'Announcements', icon: 'AN', page: 'announcements' }, { label: 'Settings', icon: 'S', page: 'settings' }],
+    parent: [{ section: 'Home' }, { label: 'Child Dashboard', icon: 'D', page: 'dashboard' }, { label: 'Fees & Payments', icon: '$', page: 'my_fees' }, { label: 'Events', icon: 'EV', page: 'events' }, { label: 'Announcements', icon: 'AN', page: 'announcements' }, { label: 'Settings', icon: 'S', page: 'settings' }],
     student: [{ section: 'School' }, { label: 'My Dashboard', icon: 'D', page: 'dashboard' }, { label: 'My Fees', icon: '$', page: 'my_fees' }, { label: 'Timetable', icon: 'TT', page: 'timetable' }, { label: 'Events', icon: 'EV', page: 'events' }, { label: 'Announcements', icon: 'AN', page: 'announcements' }, { label: 'Settings', icon: 'S', page: 'settings' }],
     reception: [
         { section: 'Overview' },
@@ -1799,7 +1799,7 @@ async function loadPage(page, el, label) {
                         <button class="qa-btn" onclick="loadPage('students', null, 'Students')"><span class="qi">S</span><span class="ql">Students</span></button>
                         <button class="qa-btn" onclick="loadPage('teachers', null, 'Teachers')"><span class="qi">T</span><span class="ql">Teachers</span></button>
                         <button class="qa-btn" onclick="loadPage('promotions', null, 'Promotions')"><span class="qi">P</span><span class="ql">Promotions</span></button>
-                        <button class="qa-btn" onclick="loadPage('terms', null, 'Terms')"><span class="qi">R</span><span class="ql">Terms</span></button>
+                    ${((currentUser && currentUser.caps && currentUser.caps.term_manage) ? `<button class="qa-btn" onclick="loadPage('terms', null, 'Terms')"><span class="qi">R</span><span class="ql">Terms</span></button>` : '')}
                       </div></div>
                     </div>
                     <div style="height:12px"></div>
@@ -1845,7 +1845,7 @@ async function loadPage(page, el, label) {
                 <div class="card" style="border-left:4px solid var(--m)"><div class="card-body">
                   <div style="font-size:12px;color:var(--66)">Your parent username is your phone number: <strong style="color:var(--1a)">${escapeHtml(currentUser.username || '')}</strong>. If you have multiple children, they will all appear below.</div>
                   <div style="height:10px"></div>
-                  <button class="btn btn-primary" onclick="loadPage('my_fees',null,'My Fees')">View My Fees</button>
+                  <button class="btn btn-primary" onclick="loadPage('my_fees',null,'Fees & Payments')">View Fees & Payments</button>
                 </div></div>
                 <div style="height:12px"></div>
                 ${groups || `<div class="card"><div class="card-body">No linked students found.</div></div>`}
@@ -2019,7 +2019,7 @@ async function loadPage(page, el, label) {
     } else if (page === 'students') {
         const [students, classes] = await Promise.all([API.fetch('/students/'), API.fetch('/classes/').catch(() => [])]);
         const role = (currentUser.profile && currentUser.profile.role) || 'superadmin';
-        const canEdit = ['superadmin', 'admin', 'reception'].includes(role);
+        const canEdit = ['superadmin', 'admin', 'headteacher', 'deputy', 'dos'].includes(role);
         const canDelete = role === 'superadmin';
         const qRaw = (document.getElementById('stu-q')?.value || '').trim();
         const q = qRaw.toLowerCase();
@@ -2046,7 +2046,7 @@ async function loadPage(page, el, label) {
               <td>
                 <button class="btn btn-xs btn-ghost" onclick="openStudentHistory(${s.id})">History</button>
                 <button class="btn btn-xs btn-ghost" onclick="printReportCardQuick(${s.id})">Report</button>
-                <button class="btn btn-xs btn-ghost" onclick="resetPortals(${s.id})">Reset PW</button>
+                ${canEdit ? `<button class="btn btn-xs btn-ghost" onclick="resetPortals(${s.id})">Reset PW</button>` : ''}
                 ${canEdit ? `<button class="btn btn-xs btn-ghost" onclick="openStudentEdit(${s.id})">Edit</button><button class="btn btn-xs btn-ghost" onclick="openStudentEdit(${s.id})">Move</button>` : ''}
                 ${canDelete ? `<button class="btn btn-xs btn-ghost" onclick="deleteStudent(${s.id})">Delete</button>` : ''}
               </td>
@@ -2119,7 +2119,7 @@ async function loadPage(page, el, label) {
             </div>`;
     } else if (page === 'subjects') {
         const role = (currentUser.profile && currentUser.profile.role) || 'superadmin';
-        const canEdit = ['superadmin', 'admin', 'headteacher', 'deputy', 'dos', 'reception', 'bursar'].includes(role);
+        const canEdit = ['superadmin', 'admin', 'headteacher', 'deputy', 'dos', 'reception'].includes(role);
         const [subjects, classes, links] = await Promise.all([
             API.fetch('/subjects/'),
             API.fetch('/classes/').catch(() => []),
@@ -2314,6 +2314,10 @@ async function loadPage(page, el, label) {
         const sel = document.getElementById('promo-class');
         sel.innerHTML = classes.map(c => `<option value="${c.id}">${c.level}</option>`).join('');
     } else if (page === 'terms') {
+        if (!(currentUser && currentUser.caps && currentUser.caps.term_manage)) {
+            main.innerHTML = `<div class="page"><div class="card"><div class="card-body">Only the super admin can manage terms.</div></div></div>`;
+            return;
+        }
         const [active, all] = await Promise.all([
             API.fetch('/terms/').catch(() => null),
             API.fetch('/terms/all').catch(() => []),
@@ -3118,6 +3122,10 @@ async function loadPage(page, el, label) {
         const [my, classes] = await Promise.all([API.fetch('/timetable/mine/'), API.fetch('/classes/').catch(() => [])]);
         const clsMap = new Map((classes || []).map(c => [c.id, c.level]));
         const role2 = (currentUser.profile && currentUser.profile.role) || 'parent';
+        if (role2 === 'parent') {
+            main.innerHTML = `<div class="page"><div class="card"><div class="card-body">Parents do not need a class timetable here. Use <strong>Child Dashboard</strong> to check your child’s attendance and <strong>Fees & Payments</strong> to follow payments and balances.</div></div></div>`;
+            return;
+        }
         const myName = `${(currentUser.first_name || '').toString()} ${(currentUser.last_name || '').toString()}`.trim().toLowerCase();
         if (!my || my.length === 0) {
             main.innerHTML = `<div class="page"><div class="card"><div class="card-body">No timetable found for your account.</div></div></div>`;
@@ -3496,7 +3504,7 @@ async function loadPage(page, el, label) {
             <div class="page-hero">
               <div>
                 <div class="page-title">API Credentials</div>
-                <div class="sub">Keys are stored in the database and used by server integrations (Google login, SMS, Mobile Money, Email, AI). Only Super Admin can edit.</div>
+                <div class="sub">Keys are stored in the database and used by server integrations (Google login, SMS, Mobile Money, Email, AI). Only Super Admin can edit. MTN and Airtel mobile-money credentials are added here.</div>
               </div>
             </div>
 
@@ -3922,6 +3930,9 @@ async function loadPage(page, el, label) {
           <tr>
             <td>${formatDateTime(p.received_at)}</td>
             <td><strong>${p.student_name}</strong><div class="sub">${p.student_system_id}</div></td>
+            <td>${escapeHtml(p.selected_child_label || `${p.student_name || ''}${p.student_system_id ? ` (${p.student_system_id})` : ''}`)}</td>
+            <td>${escapeHtml(p.payer_phone_number || '-')}</td>
+            <td style="max-width:260px"><div class="sub" style="white-space:normal">${escapeHtml(p.payment_purpose || p.notes || '-')}</div></td>
             <td style="font-weight:800;color:var(--m)">UGX ${fmt(p.amount)}</td>
             <td>${p.method}</td>
             <td>
@@ -3945,7 +3956,7 @@ async function loadPage(page, el, label) {
         main.innerHTML = `
           <div class="page">
             <div class="page-hero"><div class="page-title">Payments</div></div>
-            ${(!activeTerm || !activeTerm.academic_year) ? `<div class="card" style="border-left:4px solid var(--or)"><div class="card-body"><strong>No active term found.</strong> Payments will still be recorded, but invoice tracking works best after starting a term. <button class="btn btn-xs btn-ghost" onclick="loadPage('terms',null,'Terms')">Start Term</button></div></div><div style="height:12px"></div>` : ''}
+            ${(!activeTerm || !activeTerm.academic_year) ? `<div class="card" style="border-left:4px solid var(--or)"><div class="card-body"><strong>No active term found.</strong> Payments will still be recorded, but invoice tracking works best after starting a term.${((currentUser && currentUser.caps && currentUser.caps.term_manage) ? ` <button class="btn btn-xs btn-ghost" onclick="loadPage('terms',null,'Terms')">Start Term</button>` : '')}</div></div><div style="height:12px"></div>` : ''}
             ${noFinanceData ? financeHintCard(
                 'Finance workspace is empty',
                 'No students or finance records are available yet. Register students first, or use the local demo seed so we can walk through payments, cashbook, installments, promises, and results holds end to end.',
@@ -4024,7 +4035,7 @@ async function loadPage(page, el, label) {
             <div style="height:12px"></div>` : ''}
 
             ${(pending.length) ? `
-            <div class="card" style="border-left:4px solid var(--or)"><div class="card-head"><div class="card-title">Bank Slip Approvals</div><div class="sub">${pending.length} pending</div></div>
+            <div class="card" style="border-left:4px solid var(--or)"><div class="card-head"><div class="card-title">Bank Payment Approvals</div><div class="sub">${pending.length} pending</div></div>
               <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
                 <div class="sub">Approvals are handled by the Bursar (or Super Admin) only.</div>
                 <button class="btn btn-ghost" onclick="loadPage('approvals', null, 'Approvals')">Open Approvals</button>
@@ -4154,7 +4165,7 @@ async function loadPage(page, el, label) {
             <div style="height:12px"></div>
             <div class="card"><div class="card-body no-pad">
               <table class="tbl">
-                <thead><tr><th>Time</th><th>Student</th><th>Amount</th><th>Method</th><th>Receipt</th><th>Reference</th><th>Received By</th><th>Approved By</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Time</th><th>Student</th><th>Selected Child</th><th>Payer Phone</th><th>Purpose</th><th>Amount</th><th>Method</th><th>Receipt</th><th>Reference</th><th>Received By</th><th>Approved By</th><th>Status</th><th></th></tr></thead>
                 <tbody id="pay-body">${rows}</tbody>
               </table>
             </div></div>
@@ -4424,9 +4435,16 @@ async function loadPage(page, el, label) {
             acc[sid].push(p);
             return acc;
         }, {});
-
-        const cards = ((inv && inv.students) ? inv.students : []).map(x => {
+        const studentRows = ((inv && inv.students) ? inv.students : []);
+        const selectorChoices = studentRows.map(x => {
             const s = x.student || {};
+            return `<option value="${s.id}">${escapeHtml((s.first_name || '') + ' ' + (s.last_name || ''))}${s.student_id ? ` (${escapeHtml(s.student_id)})` : ''}</option>`;
+        }).join('');
+        const selectedStudentFilter = role === 'parent' ? ((document.getElementById('fees-student-filter')?.value || '').trim()) : '';
+
+        const cards = studentRows.map(x => {
+            const s = x.student || {};
+            if (selectedStudentFilter && String(s.id) !== String(selectedStudentFilter)) return '';
             const items = x.charge_items || [];
             const base = Number(x.base_due || 0);
             const extras = Number(x.extras_total || 0);
@@ -4434,24 +4452,43 @@ async function loadPage(page, el, label) {
             const total = Number(x.total_due || 0);
             const paid = Number(x.paid || 0);
             const bal = Number(x.balance || 0);
-            const recent = (payByStu[s.id] || []).slice(0, 6).map(p => `<div class="ri"><div class="ri-info"><div class="rn">UGX ${fmt(p.amount || 0)} <span class="sub">${escapeHtml(p.method || '')}</span></div><div class="rd">${(p.received_at || '').toString().slice(0, 19).replace('T',' ')}</div></div><div class="ri-end"><span class="badge ${p.status==='approved'||p.status==='received'?'green':''}">${escapeHtml(p.status || '')}</span></div></div>`).join('') || `<div class="sub">No payments recorded yet.</div>`;
+            const pendingAmt = Math.max(total - paid - bal, 0);
+            const recent = (payByStu[s.id] || []).slice(0, 8).map(p => `<div class="ri"><div class="ri-info"><div class="rn">UGX ${fmt(p.amount || 0)} <span class="sub">${escapeHtml(paymentMethodLabel(p.method))}</span></div><div class="rd">${(p.received_at || '').toString().slice(0, 19).replace('T',' ')}${p.reference ? ' · Ref: ' + escapeHtml(p.reference) : ''}${p.receipt_number ? ' · Receipt: ' + escapeHtml(p.receipt_number) : ''}</div></div><div class="ri-end"><span class="badge ${p.status==='approved'||p.status==='received'?'green':''}">${escapeHtml(p.status || '')}</span></div></div>`).join('') || `<div class="sub">No payments recorded yet.</div>`;
             const itemRows = (items || []).map(c => `<tr><td><strong>${escapeHtml(c.title || '')}</strong><div class="sub">${escapeHtml(c.description || '')}</div></td><td style="font-weight:900;color:var(--m)">UGX ${fmt(c.amount || 0)}</td><td style="font-size:12px;color:var(--66)">${c.due_date || '-'}</td></tr>`).join('') || `<tr><td colspan="3" style="color:var(--99)">No additional class charges.</td></tr>`;
-            const slipItems = (payByStu[s.id] || []).filter(p => (p.method || '').toLowerCase() === 'bank').slice(0, 6).map(p => `
+            const bankItems = (payByStu[s.id] || []).filter(p => (p.method || '').toLowerCase() === 'bank').slice(0, 6).map(p => `
               <div class="ri">
                 <div class="ri-info">
-                  <div class="rn">Bank slip: UGX ${fmt(p.amount || 0)} <span class="sub">${escapeHtml(p.status || '')}</span></div>
-                  <div class="rd">${(p.received_at || '').toString().slice(0, 19).replace('T',' ')}</div>
+                  <div class="rn">Bank payment: UGX ${fmt(p.amount || 0)} <span class="sub">${escapeHtml(p.status || '')}</span></div>
+                  <div class="rd">${(p.received_at || '').toString().slice(0, 19).replace('T',' ')}${p.reference ? ' · Ref: ' + escapeHtml(p.reference) : ''}</div>
                 </div>
                 <div class="ri-end">
                   ${p.receipt_image_url ? `<button class="btn btn-xs btn-ghost" onclick="viewImage('${escapeHtml(p.receipt_image_url)}','Bank Slip')">View</button>` : ''}
                   ${(p.status === 'approved' || p.status === 'received') ? `<button class="btn btn-xs btn-ghost" onclick="openReceiptPdf(${p.id})">Receipt PDF</button>` : ''}
                 </div>
-              </div>`).join('') || `<div class="sub">No bank slip submissions.</div>`;
+              </div>`).join('') || `<div class="sub">No bank payment submissions.</div>`;
+            const mobileItems = (payByStu[s.id] || []).filter(p => ['mtn_momo', 'airtel_money'].includes((p.method || '').toLowerCase())).slice(0, 8).map(p => `
+              <div class="ri">
+                <div class="ri-info">
+                  <div class="rn">${escapeHtml(paymentMethodLabel(p.method))}: UGX ${fmt(p.amount || 0)} <span class="sub">${escapeHtml(p.status || '')}</span></div>
+                  <div class="rd">${(p.received_at || '').toString().slice(0, 19).replace('T',' ')}${p.reference ? ' · Txn: ' + escapeHtml(p.reference) : ''}${p.notes ? ' · ' + escapeHtml(p.notes) : ''}</div>
+                </div>
+                <div class="ri-end">
+                  ${p.receipt_image_url ? `<button class="btn btn-xs btn-ghost" onclick="viewImage('${escapeHtml(p.receipt_image_url)}','${escapeHtml(paymentProofTitle(p.method))}')">View</button>` : ''}
+                  ${(p.status === 'approved' || p.status === 'received') ? `<button class="btn btn-xs btn-ghost" onclick="openReceiptPdf(${p.id})">Receipt PDF</button>` : ''}
+                </div>
+              </div>`).join('') || `<div class="sub">No mobile-money submissions.</div>`;
             const statementYear = term ? Number(term.academic_year || 0) : currentYear();
+            const paymentPurpose = `School fees for ${((s.first_name || '') + ' ' + (s.last_name || '')).trim()}${s.student_id ? ` (${s.student_id})` : ''}${term ? ` - Term ${term.term_number} ${term.academic_year}` : ''}`;
             return `
               <div class="card" style="border-left:4px solid var(--m);margin-bottom:12px">
                 <div class="card-head"><div class="card-title">${escapeHtml((s.first_name||'') + ' ' + (s.last_name||''))}</div><div class="sub">${escapeHtml(s.student_id || '')} · ${escapeHtml((s.current_class_level||'-') + (s.section||''))}</div></div>
                 <div class="card-body">
+                  <div class="ri" style="margin-bottom:12px"><div class="ri-info"><div class="rn">Selected learner</div><div class="rd">${escapeHtml(paymentPurpose)}</div></div></div>
+                  <div class="stats stats-3" style="margin:0 0 12px 0">
+                    <div class="stat-card"><div class="stat-num">UGX ${fmt(paid)}</div><div class="stat-label">Paid</div><div class="stat-accent green"></div></div>
+                    <div class="stat-card"><div class="stat-num">UGX ${fmt(pendingAmt)}</div><div class="stat-label">Pending</div><div class="stat-accent gold"></div></div>
+                    <div class="stat-card"><div class="stat-num">UGX ${fmt(bal)}</div><div class="stat-label">Balance</div><div class="stat-accent red"></div></div>
+                  </div>
                   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-bottom:8px">
                     <button class="btn btn-xs btn-ghost" onclick="openStatementPdf(${s.id}, ${statementYear})">Statement PDF (${statementYear})</button>
                   </div>
@@ -4469,12 +4506,40 @@ async function loadPage(page, el, label) {
                   <div style="height:12px"></div>
                   <div class="card" style="margin:0"><div class="card-head"><div class="card-title">Recent Payments</div></div><div class="card-body">${recent}</div></div>
                   <div style="height:12px"></div>
-                  <div class="card" style="margin:0"><div class="card-head"><div class="card-title">Submit Bank Slip (For Approval)</div></div>
+                  <div class="grid-2">
+                  <div class="card" style="margin:0;border-left:4px solid var(--m)"><div class="card-head"><div class="card-title">Mobile Money Payment</div><div class="sub">Fastest option</div></div>
                     <div class="card-body">
+                      <div class="sub" style="margin-bottom:10px">Mobile payments update automatically after the mobile-money gateway confirms them. No screenshots and no bursar review are needed.</div>
+                      <input type="hidden" id="mm-student-label-${s.id}" value="${escapeHtml(((s.first_name || '') + ' ' + (s.last_name || '')).trim())}">
+                      <input type="hidden" id="mm-purpose-${s.id}" value="${escapeHtml(paymentPurpose)}">
+                      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px">
+                        <div class="field" style="margin:0;min-width:180px"><label>Amount (UGX)</label><input class="field-input" id="mm-amt-${s.id}" type="number" min="0" placeholder="e.g. 50000"></div>
+                        <div class="field" style="margin:0;min-width:220px"><label>Phone number</label><input class="field-input" id="mm-phone-${s.id}" value="${escapeHtml(currentUser.username || s.parent_phone || '')}" placeholder="07XXXXXXXX or 7XXXXXXXX"></div>
+                        <div class="field" style="margin:0;min-width:220px"><label>Provider</label>
+                          <select class="field-select" id="mm-method-${s.id}">
+                            <option value="mtn_momo">MTN Mobile Money</option>
+                            <option value="airtel_money">Airtel Money</option>
+                          </select>
+                        </div>
+                        <button class="btn btn-primary" onclick="startMobilePayment(${s.id}, ${term ? Number(term.academic_year || 0) : 0}, ${term ? Number(term.term_number || 0) : 0})">Pay by Mobile Money</button>
+                      </div>
+                      <div class="ri"><div class="ri-info"><div class="rn">How it works</div><div class="rd">Pay with MTN Mobile Money or Airtel Money using the school’s configured payment flow. Once the gateway confirms the payment, it appears below automatically.</div></div></div>
+                      <div style="height:8px"></div>
+                      <div class="ri"><div class="ri-info"><div class="rn">Setup note</div><div class="rd">The super admin adds the MTN and Airtel credentials in Settings under API Credentials, which is where the school receives and confirms the money.</div></div></div>
+                      <div style="height:10px"></div>
+                      <div style="font-weight:900;margin-bottom:8px">My Mobile Money Payments</div>
+                      ${mobileItems}
+                    </div>
+                  </div>
+                  <div class="card" style="margin:0"><div class="card-head"><div class="card-title">Bank Payment</div><div class="sub">Fallback option</div></div>
+                    <div class="card-body">
+                      <div class="sub" style="margin-bottom:10px">Use bank payment when mobile money is not possible. Bank payments stay manual because the bursar must verify the bank slip.</div>
+                      <input type="hidden" id="bs-student-label-${s.id}" value="${escapeHtml(((s.first_name || '') + ' ' + (s.last_name || '')).trim())}">
+                      <input type="hidden" id="bs-purpose-${s.id}" value="${escapeHtml(paymentPurpose)}">
                       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
                         <div class="field" style="margin:0;min-width:180px"><label>Amount (UGX)</label><input class="field-input" id="bs-amt-${s.id}" type="number" min="0" placeholder="e.g. 50000"></div>
-                        <div class="field" style="margin:0;min-width:220px"><label>Reference (optional)</label><input class="field-input" id="bs-ref-${s.id}" placeholder="Bank ref / transaction id"></div>
-                        <div class="field" style="margin:0;min-width:320px"><label>Slip Photo</label>
+                        <div class="field" style="margin:0;min-width:220px"><label>Bank reference</label><input class="field-input" id="bs-ref-${s.id}" placeholder="Deposit slip / bank ref"></div>
+                        <div class="field" style="margin:0;min-width:320px"><label>Bank slip photo</label>
                           <input type="hidden" id="bs-img-${s.id}" value="">
                           <input type="file" id="bs-file-${s.id}" accept="image/*" style="display:none">
                           <div class="dropzone" id="bs-drop-${s.id}">
@@ -4486,16 +4551,17 @@ async function loadPage(page, el, label) {
                               <div style="width:62px;height:62px;border-radius:12px;overflow:hidden;border:1px solid var(--e);background:#fff">
                                 <img id="bs-prev-${s.id}" alt="Bank Slip" src="" style="width:62px;height:62px;object-fit:cover">
                               </div>
-                              <button class="btn btn-xs btn-ghost" onclick="clearBankSlipImage(${s.id})">Remove Image</button>
+                              <button class="btn btn-xs btn-ghost" onclick="clearPaymentProofImage('bs', ${s.id})">Remove Image</button>
                             </div>
                           </div>
                         </div>
-                        <button class="btn btn-primary" onclick="submitBankSlip(${s.id}, ${term ? Number(term.academic_year || 0) : 0}, ${term ? Number(term.term_number || 0) : 0})">Submit</button>
+                        <button class="btn btn-primary" onclick="submitPaymentProof(${s.id}, ${term ? Number(term.academic_year || 0) : 0}, ${term ? Number(term.term_number || 0) : 0}, 'bank', 'bs')">Submit Bank Payment</button>
                       </div>
                       <div style="height:10px"></div>
-                      <div style="font-weight:900;margin-bottom:8px">My Bank Slip Submissions</div>
-                      ${slipItems}
+                      <div style="font-weight:900;margin-bottom:8px">My Bank Payment Submissions</div>
+                      ${bankItems}
                     </div>
+                  </div>
                   </div>
                   <div class="sub" style="margin-top:10px">Total due = base fees + extras for this term. If you think something is wrong, contact the bursar.</div>
                 </div>
@@ -4504,10 +4570,27 @@ async function loadPage(page, el, label) {
 
         main.innerHTML = `
           <div class="page">
-            <div class="page-hero"><div><div class="page-title">My Fees</div><div class="sub">${termLbl}</div></div></div>
+            <div class="page-hero"><div><div class="page-title">My Fees & Mobile Payments</div><div class="sub">${termLbl}</div><div class="sub" style="margin-top:6px">Mobile money is the easiest option. Bank payment stays available when mobile payment is not possible.</div></div></div>
+            ${(role === 'parent' && studentRows.length > 1) ? `
+              <div class="card" style="margin-bottom:12px">
+                <div class="card-body">
+                  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+                    <div class="field" style="margin:0;min-width:320px">
+                      <label>Select child to pay for</label>
+                      <select class="field-select" id="fees-student-filter" onchange="loadPage('my_fees', null, 'Fees & Payments')">
+                        <option value="">All linked children</option>
+                        ${selectorChoices}
+                      </select>
+                    </div>
+                    <div class="sub">Choose one learner first when this parent account has multiple linked children.</div>
+                  </div>
+                </div>
+              </div>` : ''}
             ${cards || `<div class="card"><div class="card-body">No linked students found.</div></div>`}
           </div>`;
-        setTimeout(() => { try { wireBankSlipZones(); } catch {} }, 0);
+        const filterEl = document.getElementById('fees-student-filter');
+        if (filterEl && selectedStudentFilter) filterEl.value = selectedStudentFilter;
+        setTimeout(() => { try { wireBankSlipZones(); } catch {} try { wireMobileMoneyPhoneInputs(); } catch {} }, 0);
     } else if (page === 'approvals') {
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
         const canFinance = ['superadmin', 'bursar', 'admin', 'headteacher', 'dos', 'deputy'].includes(role);
@@ -4534,7 +4617,7 @@ async function loadPage(page, el, label) {
             const dt = formatDateTime(p.received_at, '-');
             const termLbl2 = (p.academic_year && p.term_number) ? `T${p.term_number}/${p.academic_year}` : '-';
             const sb = escapeHtml(p.submitted_by_username || '');
-            const slipBtn = p.receipt_image_url ? `<button class="btn btn-xs btn-ghost" onclick="viewImage('${escapeHtml(p.receipt_image_url)}','Bank Slip')">View Slip</button>` : '';
+            const slipBtn = p.receipt_image_url ? `<button class="btn btn-xs btn-ghost" onclick="viewImage('${escapeHtml(p.receipt_image_url)}','${escapeHtml(paymentProofTitle(p.method))}')">View Proof</button>` : '';
             const pdfBtn = (p.status === 'approved' || p.status === 'received') ? `<button class="btn btn-xs btn-ghost" onclick="openReceiptPdf(${p.id})">PDF</button>` : '';
             const reviewBtn = (canAct && (p.status === 'pending' || p.status === 'rejected')) ? `<button class="btn btn-xs btn-ghost" onclick="openApprovalModal(${p.id})">Review</button>` : '';
             const canSelect = (canAct && (p.status === 'pending' || p.status === 'rejected'));
@@ -4555,10 +4638,10 @@ async function loadPage(page, el, label) {
 
         main.innerHTML = `
           <div class="page">
-            <div class="page-hero"><div class="page-title">Payment Approvals</div></div>
+            <div class="page-hero"><div class="page-title">Bank Payment Approvals</div></div>
 
             <div class="stats stats-4">
-              <div class="stat-card"><div class="stat-num">${pendingBank.length}</div><div class="stat-label">Pending bank slips</div><div class="stat-accent gold"></div></div>
+              <div class="stat-card"><div class="stat-num">${pendingBank.length}</div><div class="stat-label">Pending bank proofs</div><div class="stat-accent gold"></div></div>
               <div class="stat-card"><div class="stat-num">UGX ${fmt(totalAmt.toFixed(0))}</div><div class="stat-label">Total pending amount</div><div class="stat-accent blue"></div></div>
               <div class="stat-card"><div class="stat-num">${pending.length}</div><div class="stat-label">All pending methods</div><div class="stat-accent red"></div></div>
               <div class="stat-card"><div class="stat-num">PDF</div><div class="stat-label">Receipt on approve</div><div class="stat-accent green"></div></div>
@@ -4580,8 +4663,6 @@ async function loadPage(page, el, label) {
                   <select class="field-select" id="appr-method">
                     <option value="">All</option>
                     <option value="bank" ${methodSel === 'bank' ? 'selected' : ''}>Bank</option>
-                    <option value="mtn_momo" ${methodSel === 'mtn_momo' ? 'selected' : ''}>MTN MoMo</option>
-                    <option value="airtel_money" ${methodSel === 'airtel_money' ? 'selected' : ''}>Airtel</option>
                     <option value="cash" ${methodSel === 'cash' ? 'selected' : ''}>Cash</option>
                     <option value="other" ${methodSel === 'other' ? 'selected' : ''}>Other</option>
                   </select>
@@ -4855,7 +4936,7 @@ async function loadPage(page, el, label) {
           </div>`;
     } else if (page === 'guardian_links') {
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
-        const canEdit = ['superadmin', 'admin', 'reception', 'bursar', 'headteacher', 'deputy', 'dos'].includes(role);
+        const canEdit = ['superadmin', 'admin', 'reception', 'headteacher', 'deputy', 'dos'].includes(role);
         const canDelete = role === 'superadmin';
         if (!canEdit) {
             main.innerHTML = `<div class="page"><div class="card"><div class="card-body">You do not have access to this page.</div></div></div>`;
@@ -6942,13 +7023,62 @@ function clearBankSlipImage(studentId) {
     if (wrap) wrap.style.display = 'none';
 }
 
-function wireBankSlipZones() {
-    document.querySelectorAll("[id^='bs-drop-']").forEach(zone => {
-        const sid = String(zone.id).replace('bs-drop-', '');
-        const input = document.getElementById(`bs-file-${sid}`);
-        const hid = document.getElementById(`bs-img-${sid}`);
-        const wrap = document.getElementById(`bs-prev-wrap-${sid}`);
-        const prev = document.getElementById(`bs-prev-${sid}`);
+function paymentMethodLabel(method) {
+    const key = String(method || '').trim().toLowerCase();
+    if (key === 'bank') return 'Bank';
+    if (key === 'mtn_momo') return 'MTN Mobile Money';
+    if (key === 'airtel_money') return 'Airtel Money';
+    if (key === 'cash') return 'Cash';
+    if (key === 'other') return 'Other';
+    return key || 'Payment';
+}
+
+function paymentProofTitle(method) {
+    const key = String(method || '').trim().toLowerCase();
+    if (key === 'bank') return 'Bank Slip';
+    if (key === 'mtn_momo') return 'MTN Mobile Proof';
+    if (key === 'airtel_money') return 'Airtel Money Proof';
+    return `${paymentMethodLabel(key)} Proof`;
+}
+
+function normalizeMsisdnClient(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('+256')) return `256${raw.slice(4).replace(/\D/g, '')}`;
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('256')) return digits;
+    if (digits.startsWith('0') && digits.length >= 10) return `256${digits.slice(1)}`;
+    if (digits.startsWith('7') && digits.length === 9) return `256${digits}`;
+    return digits;
+}
+
+function wireMobileMoneyPhoneInputs() {
+    document.querySelectorAll("[id^='mm-phone-']").forEach(input => {
+        if (!input) return;
+        input.addEventListener('blur', () => {
+            const normalized = normalizeMsisdnClient(input.value);
+            if (normalized) input.value = normalized;
+        });
+    });
+}
+
+function clearPaymentProofImage(prefix, studentId) {
+    const hid = document.getElementById(`${prefix}-img-${studentId}`);
+    const wrap = document.getElementById(`${prefix}-prev-wrap-${studentId}`);
+    const img = document.getElementById(`${prefix}-prev-${studentId}`);
+    if (hid) hid.value = '';
+    if (img) img.src = '';
+    if (wrap) wrap.style.display = 'none';
+}
+
+function wirePaymentProofZones(prefix) {
+    document.querySelectorAll(`[id^='${prefix}-drop-']`).forEach(zone => {
+        const sid = String(zone.id).replace(`${prefix}-drop-`, '');
+        const input = document.getElementById(`${prefix}-file-${sid}`);
+        const hid = document.getElementById(`${prefix}-img-${sid}`);
+        const wrap = document.getElementById(`${prefix}-prev-wrap-${sid}`);
+        const prev = document.getElementById(`${prefix}-prev-${sid}`);
         if (!input || !hid) return;
         wireDropZone(zone, input, async (files) => {
             try {
@@ -6957,7 +7087,7 @@ function wireBankSlipZones() {
                 hid.value = url;
                 if (prev) prev.src = url;
                 if (wrap) wrap.style.display = 'block';
-                flash('Slip uploaded.');
+                flash('Payment proof uploaded.');
             } catch (e) {
                 flash((e && e.detail) ? e.detail : 'Failed to upload image.');
             }
@@ -6965,19 +7095,29 @@ function wireBankSlipZones() {
     });
 }
 
-async function submitBankSlip(studentId, academicYear, termNumber) {
-    const amt = (document.getElementById(`bs-amt-${studentId}`)?.value || '').trim();
-    const ref = (document.getElementById(`bs-ref-${studentId}`)?.value || '').trim();
-    const img = (document.getElementById(`bs-img-${studentId}`)?.value || '').trim();
+function wireBankSlipZones() {
+    wirePaymentProofZones('bs');
+}
+
+async function submitPaymentProof(studentId, academicYear, termNumber, method, prefix) {
+    const amt = (document.getElementById(`${prefix}-amt-${studentId}`)?.value || '').trim();
+    const ref = (document.getElementById(`${prefix}-ref-${studentId}`)?.value || '').trim();
+    const img = (document.getElementById(`${prefix}-img-${studentId}`)?.value || '').trim();
+    const purpose = (document.getElementById(`${prefix}-purpose-${studentId}`)?.value || '').trim();
+    const studentLabel = (document.getElementById(`${prefix}-student-label-${studentId}`)?.value || '').trim();
+    const chosenMethod = method === 'mobile'
+        ? ((document.getElementById(`${prefix}-method-${studentId}`)?.value || '').trim() || 'mtn_momo')
+        : method;
     if (!amt) { flash('Enter amount.'); return; }
-    if (!img) { flash('Upload the slip image.'); return; }
+    if (!img) { flash('Upload the payment proof image.'); return; }
+    if (!purpose) { flash('Payment purpose is missing for this student. Reload the page and try again.'); return; }
     if (!academicYear || !termNumber) {
         // Still allow submit without term scoping, but warn.
         academicYear = null;
         termNumber = null;
     }
     try {
-        await API.fetch('/payment-submissions/bank-slip/', {
+        await API.fetch('/payment-submissions/proof/', {
             method: 'POST',
             body: JSON.stringify({
                 student: studentId,
@@ -6986,12 +7126,43 @@ async function submitBankSlip(studentId, academicYear, termNumber) {
                 term_number: termNumber,
                 receipt_image_url: img,
                 reference: ref || null,
+                method: chosenMethod,
+                purpose,
             })
         });
-        flash('Submitted for approval.');
-        loadPage('my_fees', null, 'My Fees');
+        flash(`Submitted for approval for ${studentLabel || 'the selected student'}.`);
+        loadPage('my_fees', null, 'Fees & Payments');
     } catch (e) {
-        flash((e && e.detail) ? e.detail : 'Failed to submit bank slip.');
+        flash((e && e.detail) ? e.detail : 'Failed to submit payment proof.');
+    }
+}
+
+async function startMobilePayment(studentId, academicYear, termNumber) {
+    const amount = Number(document.getElementById(`mm-amt-${studentId}`)?.value || 0);
+    const method = (document.getElementById(`mm-method-${studentId}`)?.value || 'mtn_momo').trim();
+    const phone_number = normalizeMsisdnClient((document.getElementById(`mm-phone-${studentId}`)?.value || '').trim());
+    const studentLabel = (document.getElementById(`mm-student-label-${studentId}`)?.value || '').trim();
+    const purpose = (document.getElementById(`mm-purpose-${studentId}`)?.value || '').trim();
+    if (!amount || amount <= 0) { flash('Enter a valid mobile payment amount.'); return; }
+    if (!phone_number) { flash('Enter the phone number that will pay.'); return; }
+    if (!purpose) { flash('Payment purpose is missing for this student. Reload the page and try again.'); return; }
+    try {
+        const res = await API.fetch('/payment-submissions/mobile-initiate/', {
+            method: 'POST',
+            body: JSON.stringify({
+                student: studentId,
+                amount,
+                academic_year: academicYear,
+                term_number: termNumber,
+                method,
+                phone_number,
+                purpose,
+            })
+        });
+        flash((res && res.detail) ? `${res.detail} Paying for ${studentLabel || 'the selected student'}.` : 'Mobile payment request sent.');
+        loadPage('my_fees', null, 'Fees & Payments');
+    } catch (e) {
+        flash((e && e.detail) ? e.detail : 'Failed to start mobile payment.');
     }
 }
 
@@ -7998,7 +8169,7 @@ async function openPaymentEdit(id) {
     if (lockNote) {
         lockNote.style.display = submittedBankSlip ? 'block' : 'none';
         lockNote.textContent = submittedBankSlip
-            ? 'Submitted bank-slip payments keep their payment method locked. Use the approval screen to approve or reject them.'
+            ? 'Submitted bank payment proofs keep their payment method locked. Use the approval screen to approve or reject them.'
             : '';
     }
     const reverseBtn = document.getElementById('p-reverse-btn');
@@ -8086,7 +8257,7 @@ function openApprovalSlipFull() {
     try {
         const url = (ACTIVE_APPROVAL && ACTIVE_APPROVAL.receipt_image_url) ? ACTIVE_APPROVAL.receipt_image_url : '';
         if (!url) { flash('No slip image.'); return; }
-        viewImage(String(url), 'Bank Slip');
+        viewImage(String(url), paymentProofTitle(ACTIVE_APPROVAL && ACTIVE_APPROVAL.method));
     } catch {}
 }
 
@@ -8625,7 +8796,7 @@ async function openStudentHistory(studentId) {
           </div>
         </div>
         <div style="min-width:260px">
-          <button class="btn btn-ghost" onclick="editStudentFromHistory(${s.id})">Edit Student</button>
+          ${(['superadmin', 'admin', 'headteacher', 'deputy', 'dos'].includes((((currentUser || {}).profile || {}).role || '')) ? `<button class="btn btn-ghost" onclick="editStudentFromHistory(${s.id})">Edit Student</button>` : '')}
         </div>
       </div>
       <div style="height:12px"></div>
@@ -8672,6 +8843,11 @@ function tabShow(id, btn) {
 }
 
 async function editStudentFromHistory(id) {
+    const role = (((currentUser || {}).profile || {}).role || '').toLowerCase();
+    if (!['superadmin', 'admin', 'headteacher', 'deputy', 'dos'].includes(role)) {
+        flash('Only administrators can edit student profiles.');
+        return;
+    }
     closeModal('modal-stuhistory');
     await openStudentEdit(id);
 }

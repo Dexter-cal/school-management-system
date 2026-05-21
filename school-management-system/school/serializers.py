@@ -60,7 +60,7 @@ class UserSerializer(serializers.ModelSerializer):
             role = obj.profile.role
         except Exception:
             role = None
-        if obj.is_superuser or role in ['superadmin', 'admin', 'headteacher', 'dos']:
+        if obj.is_superuser or role == 'superadmin':
             caps['term_manage'] = True
 
         # AI tools: teacher-only, global toggle, and requires a verified+active AI credential. 
@@ -382,6 +382,9 @@ class PaymentSerializer(serializers.ModelSerializer):
     approved_by_username = serializers.CharField(source='approved_by.username', read_only=True)
     submitted_by_username = serializers.CharField(source='submitted_by.username', read_only=True)
     deposit_batch_name = serializers.CharField(source='deposit_batch.name', read_only=True)
+    payer_phone_number = serializers.SerializerMethodField(read_only=True)
+    payment_purpose = serializers.SerializerMethodField(read_only=True)
+    selected_child_label = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Payment
@@ -398,6 +401,36 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     def get_student_name(self, obj):
         return f"{obj.student.first_name} {obj.student.last_name}"
+
+    def _provider_payload_dict(self, obj):
+        payload = getattr(obj, 'provider_payload', None)
+        return payload if isinstance(payload, dict) else {}
+
+    def get_payer_phone_number(self, obj):
+        payload = self._provider_payload_dict(obj)
+        audit = payload.get('audit') if isinstance(payload.get('audit'), dict) else {}
+        phone = audit.get('phone_number') or payload.get('phone_number')
+        if phone:
+            return str(phone)
+        try:
+            return getattr(getattr(obj, 'submitted_by', None), 'profile', None).phone_number
+        except Exception:
+            return None
+
+    def get_payment_purpose(self, obj):
+        payload = self._provider_payload_dict(obj)
+        audit = payload.get('audit') if isinstance(payload.get('audit'), dict) else {}
+        purpose = audit.get('purpose') or getattr(obj, 'notes', None)
+        return str(purpose) if purpose else None
+
+    def get_selected_child_label(self, obj):
+        payload = self._provider_payload_dict(obj)
+        audit = payload.get('audit') if isinstance(payload.get('audit'), dict) else {}
+        name = audit.get('selected_student_name') or self.get_student_name(obj)
+        system_id = audit.get('selected_student_system_id') or getattr(getattr(obj, 'student', None), 'student_id', None)
+        if name and system_id:
+            return f"{name} ({system_id})"
+        return name or system_id or None
 
     def validate_amount(self, value):
         if value is None or value <= 0:

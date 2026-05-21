@@ -69,6 +69,7 @@ import requests
 from decimal import Decimal, ROUND_HALF_UP
 
 import logging
+import json
 import re
 import base64
 import io
@@ -533,6 +534,34 @@ def _payment_method_label(method):
     }
     key = (method or '').strip().lower()
     return labels.get(key, key or 'Other')
+
+
+def _normalize_msisdn(value):
+    raw = ''.join(ch for ch in str(value or '') if ch.isdigit())
+    if not raw:
+        return ''
+    if raw.startswith('256'):
+        return raw
+    if raw.startswith('0') and len(raw) >= 10:
+        return '256' + raw[1:]
+    if raw.startswith('7') and len(raw) == 9:
+        return '256' + raw
+    return raw
+
+
+def _next_receipt_number(payment):
+    d = timezone.localdate()
+    return f"RCPT-{d.strftime('%Y%m%d')}-{payment.id:06d}"
+
+
+def _mobile_provider_success(value):
+    norm = str(value or '').strip().lower()
+    return norm in {'success', 'successful', 'completed', 'complete', 'approved', 'received', 'paid', 'ok'}
+
+
+def _mobile_provider_failure(value):
+    norm = str(value or '').strip().lower()
+    return norm in {'failed', 'failure', 'cancelled', 'rejected', 'declined', 'timeout', 'timed_out', 'expired', 'error'}
 
 
 def _get_parent_contacts(student):
@@ -1448,10 +1477,8 @@ def has_promotion_permission(user):
 def has_term_management_permission(user):
     try:
         r = user.profile.role
-        # Only special administrators should manage terms (not all admins).
-        # Keep this explicit to avoid accidentally granting term control to deputy/reception/bursar.
-        allowed = {'superadmin', 'admin', 'headteacher', 'dos'}
-        return user.is_superuser or r in allowed
+        # Term management is reserved for the special admin role only.
+        return user.is_superuser or r == 'superadmin'
     except UserProfile.DoesNotExist:
         return user.is_superuser # Fallback for users without a profile
 
@@ -1859,13 +1886,12 @@ class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.select_related('current_class', 'previous_class').all().order_by('current_class__level', 'section', 'student_id')
     serializer_class = StudentSerializer
 
+    def _can_edit_student_profiles(self, user) -> bool:
+        role = get_role(user)
+        return bool(user and user.is_authenticated and (role == 'superadmin' or is_admin_role(role)))
+
     def get_permissions(self):
-        if self.request.method in permissions.SAFE_METHODS:
-            return [permissions.IsAuthenticated()]
-        role = get_role(self.request.user)
-        if role == 'superadmin' or is_admin_role(role) or role == 'reception':
-            return [permissions.IsAuthenticated()]
-        return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
 
     def destroy(self, request, *args, **kwargs):
         if not IsSuperUser().has_permission(request, self):
@@ -2091,6 +2117,8 @@ class StudentViewSet(viewsets.ModelViewSet):
         })
 
     def create(self, request, *args, **kwargs):
+        if not self._can_edit_student_profiles(request.user):
+            return Response({'detail': 'Only administrators can create or edit student profiles.'}, status=status.HTTP_403_FORBIDDEN)
         parent_name = request.data.get('parent_name')
         parent_relationship = request.data.get('parent_relationship')
         parent_phone = request.data.get('parent_phone')
@@ -2669,6 +2697,8 @@ class StudentViewSet(viewsets.ModelViewSet):
             return parent_user_profile.user
 
     def update(self, request, *args, **kwargs):
+        if not self._can_edit_student_profiles(request.user):
+            return Response({'detail': 'Only administrators can create or edit student profiles.'}, status=status.HTTP_403_FORBIDDEN)
         parent_email = request.data.get('parent_email')
         photo_url = request.data.get('photo_url')
         data = request.data.copy()
@@ -7387,6 +7417,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.select_related('student', 'student__current_class', 'received_by', 'approved_by', 'submitted_by', 'deposit_batch').all().order_by('-received_at')
     serializer_class = PaymentSerializer
     permission_classes = [IsFinanceUser]
+    PROOF_PAYMENT_METHODS = {'bank'}
 
     def _can_manage_sensitive_payments(self, user) -> bool:
         role = get_role(user)
@@ -7395,6 +7426,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def _can_approve_bank_slips(self, user) -> bool:
         # Approvals are restricted to Bursar or Super Admin.
         return self._can_manage_sensitive_payments(user)
+
+    def _is_submitted_payment_proof(self, payment) -> bool:
+        return bool(
+            payment
+            and (payment.submitted_by_id or payment.receipt_image_url)
+            and (payment.method or '').lower() in self.PROOF_PAYMENT_METHODS
+        )
+
+    def _payment_proof_label(self, method) -> str:
+        return f"{_payment_method_label(method)} proof"
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -7451,7 +7492,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='bulk-review')
     def bulk_review(self, request):
         """
-        Finance: bulk approve/reject bank slips.
+        Finance: bulk approve/reject submitted bank-payment proofs.
         Payload:
           { "ids": [1,2,3], "action": "approve"|"reject", "reason": "...", "review_notes": "..." }
         """
@@ -7467,7 +7508,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'action must be approve or reject.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if not self._can_approve_bank_slips(request.user):
-            return Response({'detail': 'Only Bursar or Super Admin can approve/reject bank slips.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Bursar or Super Admin can approve/reject submitted bank-payment proofs.'}, status=status.HTTP_403_FORBIDDEN)
 
         # Coerce ids to ints
         clean_ids = []
@@ -7492,8 +7533,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     skipped += 1
                     continue
 
-                # Only bank slips are handled here.
-                if (p.method or '').lower() != 'bank' or not p.receipt_image_url:
+                # Only submitted proof payments are handled here.
+                if not self._is_submitted_payment_proof(p):
                     skipped += 1
                     continue
 
@@ -7667,9 +7708,9 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # If year/term/student changes, recompute both old and new invoices.
         before = self.get_object()
-        is_submitted_bank_slip = bool(before.submitted_by_id or before.receipt_image_url) and (before.method or '').lower() == 'bank'
-        if is_submitted_bank_slip and not self._can_manage_sensitive_payments(self.request.user):
-            raise PermissionDenied('Only Bursar or Super Admin can edit submitted bank slip payments.')
+        is_submitted_payment_proof = self._is_submitted_payment_proof(before)
+        if is_submitted_payment_proof and not self._can_manage_sensitive_payments(self.request.user):
+            raise PermissionDenied('Only Bursar or Super Admin can edit submitted payment-proof records.')
         old_student_id = before.student_id
         old_year = before.academic_year
         old_term = before.term_number
@@ -7752,15 +7793,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='approve')
     def approve(self, request, pk=None):
         """
-        Finance: approve a pending bank slip payment after reviewing receipt.
+        Finance: approve a pending submitted bank payment after reviewing receipt.
         """
         p = self.get_object()
+        proof_label = self._payment_proof_label(p.method)
         if not self._can_approve_bank_slips(request.user):
-            return Response({'detail': 'Only Bursar or Super Admin can approve bank slips.'}, status=status.HTTP_403_FORBIDDEN)
-        if (p.method or '').lower() != 'bank':
-            return Response({'detail': 'Only bank slip payments can be approved here.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Only Bursar or Super Admin can approve submitted bank-payment proofs.'}, status=status.HTTP_403_FORBIDDEN)
+        if (p.method or '').lower() not in self.PROOF_PAYMENT_METHODS:
+            return Response({'detail': 'Only submitted bank payment proofs can be approved here.'}, status=status.HTTP_400_BAD_REQUEST)
         if not p.receipt_image_url:
-            return Response({'detail': 'Missing bank slip image.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': f'Missing {proof_label} image.'}, status=status.HTTP_400_BAD_REQUEST)
         if p.status not in ['pending', 'rejected']:
             return Response({'detail': 'Only pending/rejected payments can be approved.'}, status=status.HTTP_400_BAD_REQUEST)
         review_notes = ((request.data or {}).get('review_notes') or '').strip()
@@ -7785,13 +7827,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
             notify_roles(
                 ['bursar', 'superadmin'] + ADMIN_ROLE_LIST,
                 category='finance',
-                title='Bank slip approved',
-                message=f"{p.student.student_id} payment of UGX {p.amount} was approved.",
+                title=f'{proof_label.title()} approved',
+                message=f"{p.student.student_id} payment of UGX {p.amount} via {_payment_method_label(p.method)} was approved.",
                 link_page='finance',
                 link_object_id=p.id,
                 student=p.student,
                 school_class=getattr(p.student, 'current_class', None),
-                meta={'payment_id': p.id, 'status': 'approved', 'method': 'bank'},
+                meta={'payment_id': p.id, 'status': 'approved', 'method': p.method},
             )
         except Exception:
             pass
@@ -7832,12 +7874,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='reject')
     def reject(self, request, pk=None):
         p = self.get_object()
+        proof_label = self._payment_proof_label(p.method)
         if not self._can_approve_bank_slips(request.user):
-            return Response({'detail': 'Only Bursar or Super Admin can reject bank slips.'}, status=status.HTTP_403_FORBIDDEN)
-        if (p.method or '').lower() != 'bank':
-            return Response({'detail': 'Only bank slip payments can be rejected here.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Only Bursar or Super Admin can reject submitted bank-payment proofs.'}, status=status.HTTP_403_FORBIDDEN)
+        if (p.method or '').lower() not in self.PROOF_PAYMENT_METHODS:
+            return Response({'detail': 'Only submitted bank payment proofs can be rejected here.'}, status=status.HTTP_400_BAD_REQUEST)
         if not p.receipt_image_url:
-            return Response({'detail': 'Missing bank slip image.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': f'Missing {proof_label} image.'}, status=status.HTTP_400_BAD_REQUEST)
         if p.status not in ['pending']:
             return Response({'detail': 'Only pending payments can be rejected.'}, status=status.HTTP_400_BAD_REQUEST)
         data = request.data or {}
@@ -7859,13 +7902,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
             notify_roles(
                 ['bursar', 'superadmin'] + ADMIN_ROLE_LIST,
                 category='finance',
-                title='Bank slip rejected',
-                message=f"{p.student.student_id} payment of UGX {p.amount} was rejected.",
+                title=f'{proof_label.title()} rejected',
+                message=f"{p.student.student_id} payment of UGX {p.amount} via {_payment_method_label(p.method)} was rejected.",
                 link_page='finance',
                 link_object_id=p.id,
                 student=p.student,
                 school_class=getattr(p.student, 'current_class', None),
-                meta={'payment_id': p.id, 'status': 'rejected', 'method': 'bank'},
+                meta={'payment_id': p.id, 'status': 'rejected', 'method': p.method},
             )
         except Exception:
             pass
@@ -7874,10 +7917,14 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
 class PaymentSubmissionViewSet(viewsets.ViewSet):
     """
-    Parent/Student: submit a payment proof (bank slip) for approval.
-    Creates a Payment row in 'pending' status.
+    Parent/Student payment intake:
+    - bank slips stay manual and bursar-approved
+    - mobile money requests are initiated against configured gateways
+      and can later auto-post through callbacks or manual sync
     """
     permission_classes = [permissions.IsAuthenticated]
+    PROOF_PAYMENT_METHODS = {'bank'}
+    MOBILE_PAYMENT_METHODS = {'mtn_momo', 'airtel_money'}
 
     def _is_parent_of(self, user, student: Student) -> bool:
         try:
@@ -7900,11 +7947,13 @@ class PaymentSubmissionViewSet(viewsets.ViewSet):
             return False
         return ph in [student.parent_phone, student.parent_phone2]
 
-    @action(detail=False, methods=['post'], url_path='bank-slip')
-    def bank_slip(self, request):
+    def _submit_payment_proof(self, request, method: str):
+        method = (method or '').strip().lower()
         role = get_role(request.user)
         if role not in ['parent', 'student']:
-            return Response({'detail': 'Only parent/student can submit a bank slip.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only parent/student can submit a bank payment slip.'}, status=status.HTTP_403_FORBIDDEN)
+        if method not in self.PROOF_PAYMENT_METHODS:
+            return Response({'detail': 'Unsupported bank payment method.'}, status=status.HTTP_400_BAD_REQUEST)
 
         student_id = (request.data or {}).get('student')
         amount = (request.data or {}).get('amount')
@@ -7912,6 +7961,7 @@ class PaymentSubmissionViewSet(viewsets.ViewSet):
         term_number = (request.data or {}).get('term_number')
         receipt_image_url = (request.data or {}).get('receipt_image_url')
         reference = (request.data or {}).get('reference')
+        purpose = ((request.data or {}).get('purpose') or '').strip()
 
         if not student_id or not amount or not receipt_image_url:
             return Response({'detail': 'student, amount, and receipt_image_url are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -7925,17 +7975,22 @@ class PaymentSubmissionViewSet(viewsets.ViewSet):
         if role == 'student':
             own_student, _, _ = get_student_scope(request.user)
             if not own_student or own_student.id != stu.id:
-                return Response({'detail': 'You can only submit a bank slip for your own account.'}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'detail': 'You can only submit a bank payment slip for your own account.'}, status=status.HTTP_403_FORBIDDEN)
+        if not purpose:
+            purpose = f"School fees for {stu.first_name} {stu.last_name} ({stu.student_id})"
+            if str(term_number).isdigit() and str(academic_year).isdigit():
+                purpose = f"{purpose} - Term {int(term_number)} {int(academic_year)}"
 
         p = Payment.objects.create(
             student=stu,
             amount=amount,
-            method='bank',
+            method=method,
             reference=(reference or '').strip() or None,
             academic_year=int(academic_year) if str(academic_year).isdigit() else None,
             term_number=int(term_number) if str(term_number).isdigit() else None,
             status='pending',
             receipt_image_url=str(receipt_image_url).strip(),
+            notes=purpose,
             received_by=None,
             submitted_by=request.user,
         )
@@ -7945,17 +8000,466 @@ class PaymentSubmissionViewSet(viewsets.ViewSet):
                 ['bursar', 'superadmin'] + ADMIN_ROLE_LIST,
                 category='finance',
                 title='Payment pending approval',
-                message=f"{stu.student_id} submitted a bank slip for UGX {p.amount}.",
+                message=f"{stu.student_id} submitted {_payment_method_label(method)} proof for UGX {p.amount}.",
                 link_page='finance',
                 link_object_id=p.id,
                 student=stu,
                 school_class=getattr(stu, 'current_class', None),
-                meta={'payment_id': p.id, 'status': 'pending', 'method': 'bank'},
+                meta={'payment_id': p.id, 'status': 'pending', 'method': method},
             )
         except Exception:
             pass
 
         return Response(PaymentSerializer(p).data, status=status.HTTP_201_CREATED)
+
+    def _mobile_callback_url(self, request, method: str, cred):
+        extra = getattr(cred, 'extra_data', None) or {}
+        configured = (extra.get('callback_url') or '').strip()
+        if configured:
+            return configured
+        suffix = 'mtn' if method == 'mtn_momo' else 'airtel'
+        return request.build_absolute_uri(f'/api/payment-submissions/mobile-callback/{suffix}/')
+
+    def _mobile_credential(self, method: str):
+        return get_active_api_credential(method) or APICredential.objects.filter(service_name=method, is_active=True).first()
+
+    def _mtn_access_token(self, cred):
+        x = cred.extra_data or {}
+        api_user = (cred.client_id or '').strip()
+        api_secret = (cred.client_secret or '').strip()
+        subscription_key = (cred.api_key or '').strip()
+        environment = (x.get('environment') or 'sandbox').strip().lower()
+        product = (x.get('product') or 'collection').strip().lower() or 'collection'
+        base_url = (x.get('base_url') or '').strip().rstrip('/') or 'https://sandbox.momodeveloper.mtn.com'
+        token_path = (x.get('token_path') or f'/{product}/token/').strip()
+        if not token_path.startswith('/'):
+            token_path = '/' + token_path
+        auth_value = base64.b64encode(f'{api_user}:{api_secret}'.encode('utf-8')).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {auth_value}',
+            'Ocp-Apim-Subscription-Key': subscription_key,
+            'Accept': 'application/json',
+        }
+        if environment:
+            headers['X-Target-Environment'] = environment
+        r = requests.post(f'{base_url}{token_path}', headers=headers, timeout=12)
+        payload = {}
+        try:
+            payload = r.json() if r.content else {}
+        except Exception:
+            payload = {}
+        token = payload.get('access_token') or ((payload.get('data') or {}).get('access_token') if isinstance(payload.get('data'), dict) else None)
+        if r.status_code != 200 or not token:
+            raise ValidationError(f"MTN token request failed: {payload or r.text}")
+        return token, {'environment': environment, 'base_url': base_url, 'product': product, 'subscription_key': subscription_key}
+
+    def _airtel_access_token(self, cred):
+        x = cred.extra_data or {}
+        client_id = (cred.client_id or '').strip()
+        client_secret = (cred.client_secret or '').strip()
+        api_key = (cred.api_key or '').strip()
+        base_url = (x.get('base_url') or '').strip().rstrip('/')
+        token_url = (x.get('token_url') or '').strip() or (base_url + '/auth/oauth2/token' if base_url else '')
+        auth_style = (x.get('auth_style') or 'body').strip().lower()
+        payload_format = (x.get('payload_format') or 'json').strip().lower()
+        grant_type = (x.get('grant_type') or 'client_credentials').strip() or 'client_credentials'
+        country = (x.get('country') or 'UG').strip()
+        currency = (x.get('currency') or 'UGX').strip()
+        headers = {'Accept': 'application/json'}
+        body = {'grant_type': grant_type}
+        if auth_style == 'basic':
+            auth_value = base64.b64encode(f'{client_id}:{client_secret}'.encode('utf-8')).decode('ascii')
+            headers['Authorization'] = f'Basic {auth_value}'
+            if api_key:
+                body['api_key'] = api_key
+        else:
+            body.update({'client_id': client_id, 'client_secret': client_secret})
+            if api_key:
+                body['api_key'] = api_key
+        if country:
+            headers['X-Country'] = country
+        if currency:
+            headers['X-Currency'] = currency
+        if payload_format == 'form':
+            r = requests.post(token_url, data=body, headers=headers, timeout=12)
+        else:
+            headers['Content-Type'] = 'application/json'
+            r = requests.post(token_url, json=body, headers=headers, timeout=12)
+        payload = {}
+        try:
+            payload = r.json() if r.content else {}
+        except Exception:
+            payload = {}
+        token = payload.get('access_token') or ((payload.get('data') or {}).get('access_token') if isinstance(payload.get('data'), dict) else None)
+        if not (200 <= r.status_code < 300) or not token:
+            raise ValidationError(f"Airtel token request failed: {payload or r.text}")
+        return token, {'base_url': base_url, 'country': country, 'currency': currency, 'api_key': api_key}
+
+    def _mark_mobile_payment_received(self, payment, payload=None, provider_status='successful'):
+        payment.status = 'received'
+        payment.provider_status = provider_status
+        payment.provider_payload = payload or {}
+        payment.approved_at = payment.approved_at or timezone.now()
+        if not payment.receipt_number:
+            payment.receipt_number = _next_receipt_number(payment)
+        payment.save(update_fields=['status', 'provider_status', 'provider_payload', 'approved_at', 'receipt_number', 'updated_at'])
+        PaymentViewSet()._recompute_invoice(payment.student_id, payment.academic_year, payment.term_number)
+        _refresh_finance_commitments(payment.student, payment.academic_year, payment.term_number)
+        try:
+            notify_roles(
+                ['bursar', 'superadmin'] + ADMIN_ROLE_LIST,
+                category='finance',
+                title='Mobile payment received',
+                message=f"{payment.student.student_id} {payment.student.first_name} {payment.student.last_name} paid UGX {payment.amount} via {_payment_method_label(payment.method)}.",
+                link_page='finance',
+                link_object_id=payment.id,
+                student=payment.student,
+                school_class=getattr(payment.student, 'current_class', None),
+                meta={'payment_id': payment.id, 'method': payment.method, 'amount': str(payment.amount), 'provider_status': provider_status},
+            )
+        except Exception:
+            pass
+        return payment
+
+    def _mark_mobile_payment_failed(self, payment, payload=None, provider_status='failed'):
+        payment.status = 'rejected'
+        payment.provider_status = provider_status
+        payment.provider_payload = payload or {}
+        payment.save(update_fields=['status', 'provider_status', 'provider_payload', 'updated_at'])
+        return payment
+
+    def _resolve_mobile_payment(self, gateway_reference=None, provider_reference=None):
+        if gateway_reference:
+            payment = Payment.objects.filter(gateway_reference=gateway_reference).first()
+            if payment:
+                return payment
+        if provider_reference:
+            payment = Payment.objects.filter(reference=provider_reference).first()
+            if payment:
+                return payment
+        return None
+
+    def _mobile_payment_audit_meta(self, request, payment, phone):
+        student = payment.student
+        role = get_role(request.user)
+        payer_name = f"{getattr(request.user, 'first_name', '')} {getattr(request.user, 'last_name', '')}".strip()
+        purpose = f"School fees for {student.first_name} {student.last_name} ({student.student_id})"
+        if payment.term_number and payment.academic_year:
+            purpose = f"{purpose} - Term {payment.term_number} {payment.academic_year}"
+        return {
+            'payer_role': role,
+            'payer_user_id': request.user.id,
+            'payer_username': request.user.username,
+            'payer_name': payer_name,
+            'phone_number': phone,
+            'selected_student_id': student.id,
+            'selected_student_system_id': student.student_id,
+            'selected_student_name': f"{student.first_name} {student.last_name}".strip(),
+            'academic_year': payment.academic_year,
+            'term_number': payment.term_number,
+            'purpose': purpose,
+        }
+
+    def _initiate_mtn_payment(self, request, payment, phone, cred):
+        token, meta = self._mtn_access_token(cred)
+        x = cred.extra_data or {}
+        request_path = (x.get('request_to_pay_path') or '/collection/v1_0/requesttopay').strip()
+        if not request_path.startswith('/'):
+            request_path = '/' + request_path
+        status_path_template = (x.get('status_path_template') or '/collection/v1_0/requesttopay/{reference_id}').strip()
+        callback_url = self._mobile_callback_url(request, 'mtn_momo', cred)
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Ocp-Apim-Subscription-Key': meta['subscription_key'],
+            'X-Reference-Id': payment.gateway_reference,
+            'X-Target-Environment': meta['environment'],
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+        body = {
+            'amount': str(payment.amount),
+            'currency': (x.get('currency') or 'UGX').strip() or 'UGX',
+            'externalId': payment.reference or payment.gateway_reference,
+            'payer': {'partyIdType': 'MSISDN', 'partyId': phone},
+            'payerMessage': f'Bitende fees {payment.student.student_id}',
+            'payeeNote': f'Term {payment.term_number or "-"} {payment.academic_year or "-"}',
+        }
+        r = requests.post(f"{meta['base_url']}{request_path}", json=body, headers=headers, timeout=15)
+        payload = {}
+        meta_payload = self._mobile_payment_audit_meta(request, payment, phone)
+        try:
+            payload = r.json() if r.content else {}
+        except Exception:
+            payload = {}
+        payment.provider_payload = {
+            'initiation': payload,
+            'callback_url': callback_url,
+            'status_path_template': status_path_template,
+            'phone_number': phone,
+            'audit': meta_payload,
+        }
+        payment.provider_status = 'pending'
+        if not payment.notes:
+            payment.notes = meta_payload['purpose']
+        payment.save(update_fields=['provider_payload', 'provider_status', 'notes', 'updated_at'])
+        if r.status_code not in (200, 201, 202):
+            self._mark_mobile_payment_failed(payment, payload, f'http_{r.status_code}')
+            raise ValidationError(f"MTN request-to-pay failed: {payload or r.text}")
+        return {'detail': 'MTN mobile-money payment request sent.', 'payment': PaymentSerializer(payment).data, 'provider_response': payload}
+
+    def _initiate_airtel_payment(self, request, payment, phone, cred):
+        token, meta = self._airtel_access_token(cred)
+        x = cred.extra_data or {}
+        request_url = (x.get('request_url') or '').strip()
+        if not request_url:
+            base_url = meta.get('base_url') or (x.get('base_url') or '').strip().rstrip('/')
+            request_path = (x.get('request_path') or '/merchant/v1/payments/').strip()
+            if not request_path.startswith('/'):
+                request_path = '/' + request_path
+            request_url = f'{base_url}{request_path}'
+        callback_url = self._mobile_callback_url(request, 'airtel_money', cred)
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+        }
+        if meta.get('country'):
+            headers['X-Country'] = meta['country']
+        if meta.get('currency'):
+            headers['X-Currency'] = meta['currency']
+        if meta.get('api_key'):
+            headers['x-api-key'] = meta['api_key']
+        body = {
+            'reference': payment.gateway_reference,
+            'subscriber': {
+                'country': meta.get('country') or 'UG',
+                'currency': meta.get('currency') or 'UGX',
+                'msisdn': phone,
+            },
+            'transaction': {
+                'amount': str(payment.amount),
+                'country': meta.get('country') or 'UG',
+                'currency': meta.get('currency') or 'UGX',
+                'id': payment.gateway_reference,
+            },
+            'callback_url': callback_url,
+        }
+        r = requests.post(request_url, json=body, headers=headers, timeout=15)
+        payload = {}
+        meta_payload = self._mobile_payment_audit_meta(request, payment, phone)
+        try:
+            payload = r.json() if r.content else {}
+        except Exception:
+            payload = {}
+        payment.provider_payload = {
+            'initiation': payload,
+            'callback_url': callback_url,
+            'request_url': request_url,
+            'phone_number': phone,
+            'audit': meta_payload,
+        }
+        payment.provider_status = 'pending'
+        if not payment.notes:
+            payment.notes = meta_payload['purpose']
+        payment.save(update_fields=['provider_payload', 'provider_status', 'notes', 'updated_at'])
+        if r.status_code not in (200, 201, 202):
+            self._mark_mobile_payment_failed(payment, payload, f'http_{r.status_code}')
+            raise ValidationError(f"Airtel payment request failed: {payload or r.text}")
+        return {'detail': 'Airtel mobile-money payment request sent.', 'payment': PaymentSerializer(payment).data, 'provider_response': payload}
+
+    def _sync_mobile_payment_status(self, payment):
+        method = (payment.method or '').strip().lower()
+        if method == 'mtn_momo':
+            cred = self._mobile_credential(method)
+            token, meta = self._mtn_access_token(cred)
+            stored = payment.provider_payload or {}
+            status_path_template = ((stored.get('status_path_template') if isinstance(stored, dict) else None) or '/collection/v1_0/requesttopay/{reference_id}').strip()
+            status_path = status_path_template.replace('{reference_id}', payment.gateway_reference or '')
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Ocp-Apim-Subscription-Key': meta['subscription_key'],
+                'X-Target-Environment': meta['environment'],
+                'Accept': 'application/json',
+            }
+            r = requests.get(f"{meta['base_url']}{status_path}", headers=headers, timeout=12)
+            payload = {}
+            try:
+                payload = r.json() if r.content else {}
+            except Exception:
+                payload = {}
+            status_value = payload.get('status') or payload.get('financialTransactionStatus') or payload.get('reason')
+            if _mobile_provider_success(status_value):
+                self._mark_mobile_payment_received(payment, payload, str(status_value or 'successful'))
+            elif _mobile_provider_failure(status_value):
+                self._mark_mobile_payment_failed(payment, payload, str(status_value or 'failed'))
+            else:
+                payment.provider_status = str(status_value or 'pending')
+                payment.provider_payload = payload
+                payment.save(update_fields=['provider_status', 'provider_payload', 'updated_at'])
+            return payment
+
+        if method == 'airtel_money':
+            cred = self._mobile_credential(method)
+            token, meta = self._airtel_access_token(cred)
+            x = cred.extra_data or {}
+            status_url = (x.get('status_url_template') or '').strip()
+            if status_url:
+                status_url = status_url.replace('{reference_id}', payment.gateway_reference or '')
+            else:
+                base_url = meta.get('base_url') or (x.get('base_url') or '').strip().rstrip('/')
+                status_url = f"{base_url}/standard/v1/payments/{payment.gateway_reference or ''}"
+            headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/json'}
+            if meta.get('country'):
+                headers['X-Country'] = meta['country']
+            if meta.get('currency'):
+                headers['X-Currency'] = meta['currency']
+            if meta.get('api_key'):
+                headers['x-api-key'] = meta['api_key']
+            r = requests.get(status_url, headers=headers, timeout=12)
+            payload = {}
+            try:
+                payload = r.json() if r.content else {}
+            except Exception:
+                payload = {}
+            data_node = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+            txn = data_node.get('transaction') if isinstance(data_node.get('transaction'), dict) else {}
+            status_value = payload.get('status') or txn.get('status') or data_node.get('status')
+            if _mobile_provider_success(status_value):
+                self._mark_mobile_payment_received(payment, payload, str(status_value or 'successful'))
+            elif _mobile_provider_failure(status_value):
+                self._mark_mobile_payment_failed(payment, payload, str(status_value or 'failed'))
+            else:
+                payment.provider_status = str(status_value or 'pending')
+                payment.provider_payload = payload
+                payment.save(update_fields=['provider_status', 'provider_payload', 'updated_at'])
+            return payment
+
+        return payment
+
+    @action(detail=False, methods=['post'], url_path='proof')
+    def proof(self, request):
+        return self._submit_payment_proof(request, (request.data or {}).get('method'))
+
+    @action(detail=False, methods=['post'], url_path='bank-slip')
+    def bank_slip(self, request):
+        return self._submit_payment_proof(request, 'bank')
+
+    @action(detail=False, methods=['post'], url_path='mobile-initiate')
+    def mobile_initiate(self, request):
+        role = get_role(request.user)
+        if role not in ['parent', 'student']:
+            return Response({'detail': 'Only parent/student users can start a mobile payment.'}, status=status.HTTP_403_FORBIDDEN)
+        data = request.data or {}
+        method = (data.get('method') or '').strip().lower()
+        if method not in self.MOBILE_PAYMENT_METHODS:
+            return Response({'detail': 'Unsupported mobile payment method.'}, status=status.HTTP_400_BAD_REQUEST)
+        student_id = data.get('student')
+        amount = data.get('amount')
+        academic_year = data.get('academic_year')
+        term_number = data.get('term_number')
+        phone = _normalize_msisdn(data.get('phone_number'))
+        if not student_id or not amount or not phone:
+            return Response({'detail': 'student, amount, and phone_number are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        stu = Student.objects.filter(id=student_id).first()
+        if not stu:
+            return Response({'detail': 'Student not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if role == 'parent' and not self._is_parent_of(request.user, stu):
+            return Response({'detail': 'This student is not linked to your parent account.'}, status=status.HTTP_403_FORBIDDEN)
+        if role == 'student':
+            own_student, _, _ = get_student_scope(request.user)
+            if not own_student or own_student.id != stu.id:
+                return Response({'detail': 'You can only start a mobile payment for your own account.'}, status=status.HTTP_403_FORBIDDEN)
+        cred = self._mobile_credential(method)
+        if not cred:
+            return Response({'detail': f'No active {_payment_method_label(method)} credential is configured yet. Ask the super admin to finish API Credentials setup.'}, status=status.HTTP_400_BAD_REQUEST)
+        gateway_reference = f"{method.upper()}-{uuid.uuid4().hex[:24]}"
+        payment = Payment.objects.create(
+            student=stu,
+            amount=amount,
+            method=method,
+            reference=(data.get('reference') or '').strip() or gateway_reference,
+            gateway_reference=gateway_reference,
+            provider_name=method,
+            provider_status='initiated',
+            provider_payload={},
+            academic_year=int(academic_year) if str(academic_year).isdigit() else None,
+            term_number=int(term_number) if str(term_number).isdigit() else None,
+            notes=(data.get('purpose') or '').strip() or None,
+            status='pending',
+            received_by=None,
+            submitted_by=request.user,
+        )
+        try:
+            if method == 'mtn_momo':
+                result = self._initiate_mtn_payment(request, payment, phone, cred)
+            else:
+                result = self._initiate_airtel_payment(request, payment, phone, cred)
+        except ValidationError as e:
+            return Response({'detail': str(e), 'payment': PaymentSerializer(payment).data}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except Exception as e:
+            self._mark_mobile_payment_failed(payment, {'error': str(e)}, 'error')
+            return Response({'detail': f'Mobile payment request failed: {e}', 'payment': PaymentSerializer(payment).data}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        return Response(result, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=False, methods=['post'], url_path='mobile-sync')
+    def mobile_sync(self, request):
+        payment_id = (request.data or {}).get('payment')
+        payment = Payment.objects.filter(id=payment_id, method__in=list(self.MOBILE_PAYMENT_METHODS)).select_related('student').first()
+        if not payment:
+            return Response({'detail': 'Mobile payment not found.'}, status=status.HTTP_404_NOT_FOUND)
+        role = get_role(request.user)
+        if role == 'parent' and not self._is_parent_of(request.user, payment.student):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if role == 'student':
+            own_student, _, _ = get_student_scope(request.user)
+            if not own_student or own_student.id != payment.student_id:
+                return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if role not in ['parent', 'student', 'bursar', 'superadmin'] and not is_admin_role(role):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            payment = self._sync_mobile_payment_status(payment)
+        except Exception as e:
+            return Response({'detail': f'Could not sync payment right now: {e}'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='mobile-callback/mtn', permission_classes=[permissions.AllowAny])
+    def mobile_callback_mtn(self, request):
+        payload = request.data or {}
+        gateway_reference = request.headers.get('X-Reference-Id') or payload.get('referenceId') or payload.get('reference_id') or payload.get('externalId')
+        payment = self._resolve_mobile_payment(gateway_reference=gateway_reference, provider_reference=payload.get('externalId'))
+        if not payment:
+            return Response({'detail': 'Payment not found.'}, status=status.HTTP_404_NOT_FOUND)
+        status_value = payload.get('status') or payload.get('financialTransactionStatus') or payload.get('reason')
+        if _mobile_provider_success(status_value):
+            self._mark_mobile_payment_received(payment, payload, str(status_value or 'successful'))
+        elif _mobile_provider_failure(status_value):
+            self._mark_mobile_payment_failed(payment, payload, str(status_value or 'failed'))
+        else:
+            payment.provider_status = str(status_value or 'pending')
+            payment.provider_payload = payload
+            payment.save(update_fields=['provider_status', 'provider_payload', 'updated_at'])
+        return Response({'ok': True}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='mobile-callback/airtel', permission_classes=[permissions.AllowAny])
+    def mobile_callback_airtel(self, request):
+        payload = request.data or {}
+        txn = payload.get('transaction') if isinstance(payload.get('transaction'), dict) else {}
+        data_node = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+        txn = txn or (data_node.get('transaction') if isinstance(data_node.get('transaction'), dict) else {})
+        gateway_reference = payload.get('reference') or payload.get('txn_id') or txn.get('id') or payload.get('transaction_id')
+        payment = self._resolve_mobile_payment(gateway_reference=gateway_reference, provider_reference=payload.get('airtel_money_id'))
+        if not payment:
+            return Response({'detail': 'Payment not found.'}, status=status.HTTP_404_NOT_FOUND)
+        status_value = payload.get('status') or txn.get('status') or data_node.get('status')
+        if _mobile_provider_success(status_value):
+            self._mark_mobile_payment_received(payment, payload, str(status_value or 'successful'))
+        elif _mobile_provider_failure(status_value):
+            self._mark_mobile_payment_failed(payment, payload, str(status_value or 'failed'))
+        else:
+            payment.provider_status = str(status_value or 'pending')
+            payment.provider_payload = payload
+            payment.save(update_fields=['provider_status', 'provider_payload', 'updated_at'])
+        return Response({'ok': True}, status=status.HTTP_200_OK)
 
 
 class InvoiceViewSet(viewsets.ModelViewSet):
