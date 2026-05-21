@@ -715,6 +715,35 @@ function renderCredentialHealthCard(health, role = '') {
         </div>
       </div>`;
 }
+
+function canManagePasswordResetsClient() {
+    const role = ((((currentUser || {}).profile || {}).role) || '').toLowerCase();
+    return ['superadmin', 'headteacher', 'dos'].includes(role);
+}
+
+function renderGatewayReadinessCard(health) {
+    const gateways = (health && Array.isArray(health.gateways)) ? health.gateways : [];
+    const rows = gateways.map(g => `
+      <div class="ri">
+        <div class="ri-info">
+          <div class="rn">${escapeHtml(g.label || '')}</div>
+          <div class="rd">${escapeHtml(g.detail || '')}${g.callback_url ? ` · ${escapeHtml(g.callback_url)}` : ''}</div>
+        </div>
+        <div class="ri-end">
+          <span class="badge ${g.verified && g.callback_ready ? 'green' : 'red'}">${escapeHtml(g.readiness_label || '')}</span>
+        </div>
+      </div>
+    `).join('') || `<div class="sub">No payment gateways configured yet.</div>`;
+    return `
+      <div class="card">
+        <div class="card-head"><div class="card-title">Gateway Readiness</div><div class="sub">MTN / Airtel payment launch status</div></div>
+        <div class="card-body">
+          ${rows}
+          <div style="height:10px"></div>
+          <div class="sub">Ready means the gateway is configured, last verification passed, and a public HTTPS callback URL is saved.</div>
+        </div>
+      </div>`;
+}
 function renderCashierHandoverCard(handover) {
     if (!handover) {
         return financeHintCard(
@@ -2021,6 +2050,7 @@ async function loadPage(page, el, label) {
         const role = (currentUser.profile && currentUser.profile.role) || 'superadmin';
         const canEdit = ['superadmin', 'admin', 'headteacher', 'deputy', 'dos'].includes(role);
         const canDelete = role === 'superadmin';
+        const canResetPasswords = canManagePasswordResetsClient();
         const qRaw = (document.getElementById('stu-q')?.value || '').trim();
         const q = qRaw.toLowerCase();
         const clsFilter = (document.getElementById('stu-cls')?.value || '').trim();
@@ -2046,7 +2076,7 @@ async function loadPage(page, el, label) {
               <td>
                 <button class="btn btn-xs btn-ghost" onclick="openStudentHistory(${s.id})">History</button>
                 <button class="btn btn-xs btn-ghost" onclick="printReportCardQuick(${s.id})">Report</button>
-                ${canEdit ? `<button class="btn btn-xs btn-ghost" onclick="resetPortals(${s.id})">Reset PW</button>` : ''}
+                ${canResetPasswords ? `<button class="btn btn-xs btn-ghost" onclick="resetPortals(${s.id})">Reset PW</button>` : ''}
                 ${canEdit ? `<button class="btn btn-xs btn-ghost" onclick="openStudentEdit(${s.id})">Edit</button><button class="btn btn-xs btn-ghost" onclick="openStudentEdit(${s.id})">Move</button>` : ''}
                 ${canDelete ? `<button class="btn btn-xs btn-ghost" onclick="deleteStudent(${s.id})">Delete</button>` : ''}
               </td>
@@ -3465,10 +3495,16 @@ async function loadPage(page, el, label) {
                 </div></div>
             </div>`;
     } else if (page === 'credentials') {
+        const role = (currentUser.profile && currentUser.profile.role) || 'admin';
+        if (role !== 'superadmin') {
+            main.innerHTML = `<div class="page"><div class="card"><div class="card-body">Only the super admin can access API credential configuration.</div></div></div>`;
+            return;
+        }
         const [creds, credHistory] = await Promise.all([
             API.fetch('/api-credentials/'),
             API.fetch('/api-credentials/history/?limit=15').catch(() => []),
         ]);
+        const health = await API.fetch('/api-credentials/health/').catch(() => null);
         const rows = (creds || []).map(c => {
             const sid = (c.client_id || '').toString();
             const key = (c.api_key || '').toString();
@@ -3507,6 +3543,9 @@ async function loadPage(page, el, label) {
                 <div class="sub">Keys are stored in the database and used by server integrations (Google login, SMS, Mobile Money, Email, AI). Only Super Admin can edit. MTN and Airtel mobile-money credentials are added here.</div>
               </div>
             </div>
+
+            ${renderGatewayReadinessCard(health)}
+            <div style="height:12px"></div>
 
             <div class="grid-2">
               <div class="card">
@@ -5410,6 +5449,7 @@ async function saveUser() {
 
         // Optional password reset.
         if (pwMode === 'manual' && password) {
+            if (!canManagePasswordResetsClient()) { flash('Only the super admin, headteacher, or DOS can reset passwords.'); return; }
             if (!validateStrongPasswordClient(password, 'Manual password')) return;
             const r = await API.fetch(`/users/${id}/reset-password/`, { method: 'POST', body: JSON.stringify({ password_mode: 'manual', password }) });
             credentialResult = r;
@@ -5418,6 +5458,7 @@ async function saveUser() {
             handover = r && r.handover ? r.handover : null;
         }
         if (pwMode === 'auto') {
+            if (!canManagePasswordResetsClient()) { flash('Only the super admin, headteacher, or DOS can reset passwords.'); return; }
             const ok = confirm('Auto-generate a NEW temporary password for this user?');
             if (ok) {
                 const r = await API.fetch(`/users/${id}/reset-password/`, { method: 'POST', body: JSON.stringify({ password_mode: 'auto', auto_password: true }) });
@@ -8871,6 +8912,10 @@ async function deleteStudent(id) {
 }
 
 async function resetPortals(studentId) {
+    if (!canManagePasswordResetsClient()) {
+        flash('Only the super admin, headteacher, or DOS can reset portal passwords.');
+        return;
+    }
     try {
         const res = await API.fetch(`/students/${studentId}/reset-portals/`, { method: 'POST', body: JSON.stringify({ reset_parent: true, reset_student: true }) });
         const parts = [];

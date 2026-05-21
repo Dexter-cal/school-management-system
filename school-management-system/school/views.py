@@ -172,9 +172,15 @@ def _get_handover_payload(kind, obj_id, token):
 
 ADMIN_ROLE_LIST = ['admin', 'headteacher', 'deputy', 'dos']
 ADMIN_ROLES = set(ADMIN_ROLE_LIST)
+PASSWORD_ADMIN_ROLES = {'superadmin', 'headteacher', 'dos'}
 
 def is_admin_role(role: Optional[str]) -> bool:
     return bool(role) and role in ADMIN_ROLES
+
+
+def can_manage_passwords(user) -> bool:
+    role = get_role(user)
+    return bool(user and user.is_authenticated and (user.is_superuser or role in PASSWORD_ADMIN_ROLES))
 
 def get_system_setting(key, default=None):
     """
@@ -832,6 +838,44 @@ def _build_cashbook_snapshot(close_date, *, cashier=None, opening_cash=None, cou
 
 
 def _build_credential_health_summary():
+    def gateway_item(code, label, service_name):
+        cred = APICredential.objects.filter(service_name=service_name).order_by('-is_active', '-updated_at').first()
+        if not cred:
+            return {
+                'code': code,
+                'label': label,
+                'configured': False,
+                'verified': False,
+                'callback_ready': False,
+                'callback_url': None,
+                'readiness_label': 'Not configured',
+                'detail': 'No credential saved yet.',
+            }
+        extra = cred.extra_data if isinstance(cred.extra_data, dict) else {}
+        callback_url = str(extra.get('callback_url') or '').strip() or None
+        callback_ready = bool(
+            callback_url
+            and callback_url.startswith('https://')
+            and 'localhost' not in callback_url
+            and '127.0.0.1' not in callback_url
+        )
+        verified = bool(cred.is_active and cred.last_verify_ok is True)
+        detail_bits = [
+            'configured' if cred.is_active else 'inactive',
+            'verified' if verified else 'not verified',
+            'callback ready' if callback_ready else 'callback missing/private',
+        ]
+        return {
+            'code': code,
+            'label': label,
+            'configured': True,
+            'verified': verified,
+            'callback_ready': callback_ready,
+            'callback_url': callback_url,
+            'readiness_label': 'Ready' if (verified and callback_ready) else 'Needs attention',
+            'detail': ', '.join(detail_bits),
+        }
+
     def item(code, label, service_names):
         cred = (
             APICredential.objects.filter(service_name__in=service_names)
@@ -920,6 +964,10 @@ def _build_credential_health_summary():
     ]
     return {
         'providers': providers,
+        'gateways': [
+            gateway_item('mtn', 'MTN MoMo', 'mtn_momo'),
+            gateway_item('airtel', 'Airtel Money', 'airtel_money'),
+        ],
         'summary': {
             'healthy_count': healthy_count,
             'attention_count': attention_count,
@@ -2459,10 +2507,9 @@ class StudentViewSet(viewsets.ModelViewSet):
     def reset_portals(self, request, pk=None):
         """
         Resets parent and/or student portal passwords and returns new temporary credentials.
-        Only superadmin/admin/reception can do this.
+        Only superadmin, headteacher, or DOS can do this.
         """
-        role = get_role(request.user)
-        if not (role == 'superadmin' or is_admin_role(role) or role == 'reception'):
+        if not can_manage_passwords(request.user):
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
         student = self.get_object()
@@ -3711,11 +3758,10 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='reset-password', permission_classes=[permissions.IsAuthenticated])
     def reset_password(self, request, pk=None):
         """
-        Superadmin/admin can reset a staff user's password (manual or auto-generated),
+        Superadmin, headteacher, or DOS can reset a staff user's password (manual or auto-generated),
         return a short-lived handover token for printing credentials, and enqueue a sensitive print item.
         """
-        role = get_role(request.user)
-        if not (role == 'superadmin' or is_admin_role(role) or request.user.is_superuser):
+        if not can_manage_passwords(request.user):
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
         user = self.get_object()

@@ -14,6 +14,7 @@ from .models import (
 )
 from .utils import sanitize_rich_text_html
 from django.contrib.auth.models import User
+from typing import Any, Optional
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -402,30 +403,31 @@ class PaymentSerializer(serializers.ModelSerializer):
     def get_student_name(self, obj):
         return f"{obj.student.first_name} {obj.student.last_name}"
 
-    def _provider_payload_dict(self, obj):
-        payload = getattr(obj, 'provider_payload', None)
+    def _provider_payload_dict(self, obj) -> dict[str, Any]:
+        payload: Any = getattr(obj, 'provider_payload', None)
         return payload if isinstance(payload, dict) else {}
 
-    def get_payer_phone_number(self, obj):
+    def _provider_audit_dict(self, obj) -> dict[str, Any]:
+        audit: Any = self._provider_payload_dict(obj).get('audit')
+        return audit if isinstance(audit, dict) else {}
+
+    def get_payer_phone_number(self, obj) -> Optional[str]:
         payload = self._provider_payload_dict(obj)
-        audit = payload.get('audit') if isinstance(payload.get('audit'), dict) else {}
+        audit = self._provider_audit_dict(obj)
         phone = audit.get('phone_number') or payload.get('phone_number')
         if phone:
             return str(phone)
-        try:
-            return getattr(getattr(obj, 'submitted_by', None), 'profile', None).phone_number
-        except Exception:
-            return None
+        submitted_by = getattr(obj, 'submitted_by', None)
+        profile = getattr(submitted_by, 'profile', None) if submitted_by is not None else None
+        return getattr(profile, 'phone_number', None)
 
-    def get_payment_purpose(self, obj):
-        payload = self._provider_payload_dict(obj)
-        audit = payload.get('audit') if isinstance(payload.get('audit'), dict) else {}
+    def get_payment_purpose(self, obj) -> Optional[str]:
+        audit = self._provider_audit_dict(obj)
         purpose = audit.get('purpose') or getattr(obj, 'notes', None)
         return str(purpose) if purpose else None
 
-    def get_selected_child_label(self, obj):
-        payload = self._provider_payload_dict(obj)
-        audit = payload.get('audit') if isinstance(payload.get('audit'), dict) else {}
+    def get_selected_child_label(self, obj) -> Optional[str]:
+        audit = self._provider_audit_dict(obj)
         name = audit.get('selected_student_name') or self.get_student_name(obj)
         system_id = audit.get('selected_student_system_id') or getattr(getattr(obj, 'student', None), 'student_id', None)
         if name and system_id:
