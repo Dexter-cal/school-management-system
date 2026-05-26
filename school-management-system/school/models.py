@@ -17,6 +17,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=[
         ('superadmin', 'Super Admin'),
+        ('director', 'Director/Head Director'),
         # Administrators (non-superadmin)
         ('admin', 'Administrator'),
         ('headteacher', 'Headteacher'),
@@ -477,6 +478,7 @@ class Mark(models.Model):
     score = models.IntegerField()
     term = models.IntegerField()
     year = models.IntegerField()
+    exam_type = models.ForeignKey('ExamType', on_delete=models.SET_NULL, null=True, blank=True, related_name='marks')
     teacher = models.ForeignKey(Teacher, on_delete=models.SET_NULL, null=True)
     remarks = models.TextField(blank=True, null=True)
 
@@ -603,6 +605,7 @@ class AcademicTerm(models.Model):
     term_number = models.IntegerField(choices=[(1, 'Term 1'), (2, 'Term 2'), (3, 'Term 3')])
     start_date = models.DateField()
     end_date = models.DateField()
+    assessment_config = models.JSONField(default=dict, blank=True)
     holiday_break_days = models.IntegerField(default=0)
     auto_generate_invoices_on_start = models.BooleanField(default=False)
     sms_parents_on_start = models.BooleanField(default=False)
@@ -953,10 +956,37 @@ class IDCounter(models.Model):
         return f"{self.entity_type} Counter: {self.current_count}"
 
 class GradingScale(models.Model):
+    """
+    Enhanced grading scale with template support and better organization.
+    Supports multiple grading systems (5-grade, 13-grade, 7-point, custom).
+    """
+    TEMPLATE_CHOICES = [
+        ('5grade', '5-Grade System (A, B, C, D, F)'),
+        ('13grade', '13-Grade System (A+, A, A-, B+, ...)'),
+        ('7point', '7-Point Scale'),
+        ('custom', 'Custom'),
+    ]
+    
     name = models.CharField(max_length=100, unique=True)
-    scale_data = models.JSONField(default=list) # [{'grade': 'A+', 'min_score': 90, 'max_score': 100, 'status': 'Pass', 'implication': 'Promote / Graduate'}]
+    template_type = models.CharField(max_length=20, choices=TEMPLATE_CHOICES, default='custom')
+    description = models.TextField(blank=True, null=True, help_text='Description of this grading scale')
+    scale_data = models.JSONField(
+        default=list,
+        help_text='[{"grade": "A+", "min_score": 90, "max_score": 100, "gpa_points": 4.0, "status": "Pass", "implication": "Promote / Graduate"}]'
+    )
     is_default = models.BooleanField(default=False)
+    is_template = models.BooleanField(default=False, help_text='Mark as True if this is a template for reuse')
     school_class = models.OneToOneField(SchoolClass, on_delete=models.CASCADE, null=True, blank=True, related_name='custom_grading_scale')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_grading_scales')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_default', 'name']
+        indexes = [
+            models.Index(fields=['is_default']),
+            models.Index(fields=['template_type']),
+        ]
 
     def __str__(self):
         return self.name
@@ -1285,3 +1315,286 @@ class PrintQueueItem(models.Model):
 
     def __str__(self):
         return f"{self.kind}: {self.title} ({self.status})"
+
+
+# ==================== NEW MODELS FOR ENHANCED SYSTEM ====================
+
+class ExamType(models.Model):
+    """
+    Define the types of exams used in the school (e.g., Midterm, End of Term, Beginning of Term).
+    Admins can select which exam types are active for each term.
+    """
+    EXAM_TYPE_CHOICES = [
+        ('beginning', 'Beginning of Term'),
+        ('midterm', 'Midterm'),
+        ('endterm', 'End of Term'),
+        ('other', 'Other'),
+    ]
+    
+    name = models.CharField(max_length=100)
+    exam_type = models.CharField(max_length=20, choices=EXAM_TYPE_CHOICES)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('name', 'exam_type')
+        indexes = [
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.exam_type})"
+
+
+class AcademicCalendarEvent(models.Model):
+    """
+    Mark important dates in the academic calendar (exams, visitation days, payment deadlines, etc.).
+    Helps coordinate school activities and remind parents/staff.
+    """
+    EVENT_TYPE_CHOICES = [
+        ('exam', 'Exam'),
+        ('visitation_day', 'Visitation Day (VD)'),
+        ('payment_deadline', 'Payment Deadline'),
+        ('holiday', 'Holiday'),
+        ('school_closure', 'School Closure'),
+        ('event', 'Event'),
+        ('other', 'Other'),
+    ]
+    
+    academic_term = models.ForeignKey(AcademicTerm, on_delete=models.CASCADE, related_name='calendar_events')
+    event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
+    exam_type = models.ForeignKey(ExamType, on_delete=models.SET_NULL, null=True, blank=True)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, null=True)
+    event_date = models.DateField()
+    start_time = models.TimeField(blank=True, null=True)
+    end_time = models.TimeField(blank=True, null=True)
+    notify_parents = models.BooleanField(default=False)
+    notify_teachers = models.BooleanField(default=False)
+    notify_staff = models.BooleanField(default=False)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_calendar_events')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['event_date', 'start_time']
+        indexes = [
+            models.Index(fields=['academic_term', 'event_date']),
+            models.Index(fields=['event_type', 'event_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.event_date})"
+
+
+class TermInstallmentPlan(models.Model):
+    """
+    Define installment payment plans for a term (e.g., 2 or 3 installments).
+    Splits the term into periods and specifies payment deadlines for each installment.
+    """
+    academic_term = models.OneToOneField(AcademicTerm, on_delete=models.CASCADE, related_name='installment_plan')
+    number_of_installments = models.IntegerField(choices=[(2, '2 Installments'), (3, '3 Installments')], default=2)
+    installments = models.JSONField(
+        default=list,
+        help_text='List of installments: [{"number": 1, "due_date": "YYYY-MM-DD", "percentage": 50}, ...]'
+    )
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_term_installment_plans')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.academic_term} - {self.number_of_installments} Installments"
+
+
+class StudentDebtRecord(models.Model):
+    """
+    Track unpaid fees/debt from previous terms separately from current term fees.
+    Helps distinguish between new fees and carried-forward debt.
+    """
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='debt_records')
+    academic_term = models.ForeignKey(AcademicTerm, on_delete=models.PROTECT)
+    original_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    outstanding_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    reason = models.CharField(max_length=200, default='Unpaid fees from previous term')
+    is_settled = models.BooleanField(default=False)
+    settled_date = models.DateTimeField(blank=True, null=True)
+    settled_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='settled_debts')
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('student', 'academic_term')
+        indexes = [
+            models.Index(fields=['student', 'is_settled']),
+            models.Index(fields=['academic_term', 'is_settled']),
+        ]
+
+    def __str__(self):
+        return f"Debt: {self.student} - {self.outstanding_amount}"
+
+
+class TeacherSalary(models.Model):
+    """
+    Track teacher salary/compensation records.
+    """
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='salary_records')
+    academic_term = models.ForeignKey(AcademicTerm, on_delete=models.SET_NULL, null=True, blank=True)
+    base_salary = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default='UGX')
+    payment_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('approved', 'Approved'),
+            ('paid', 'Paid'),
+            ('partial', 'Partial Payment'),
+        ],
+        default='pending'
+    )
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_teacher_salaries')
+    paid_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='paid_teacher_salaries')
+    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0'))
+    paid_date = models.DateTimeField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['teacher', 'academic_term']),
+            models.Index(fields=['payment_status', 'paid_date']),
+        ]
+
+    def __str__(self):
+        teacher_user = getattr(self.teacher, 'user', None)
+        teacher_pk = getattr(self.teacher, 'pk', None)
+        teacher_name = teacher_user.get_full_name() if teacher_user else f'Teacher #{teacher_pk or "N/A"}'
+        return f"{teacher_name} - {self.base_salary} ({self.payment_status})"
+
+
+class TeacherAllowance(models.Model):
+    """
+    Track additional allowances for teachers (transport, housing, etc.).
+    """
+    ALLOWANCE_TYPE_CHOICES = [
+        ('transport', 'Transport Allowance'),
+        ('housing', 'Housing Allowance'),
+        ('meal', 'Meal Allowance'),
+        ('performance', 'Performance Bonus'),
+        ('other', 'Other'),
+    ]
+    
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='allowances')
+    academic_term = models.ForeignKey(AcademicTerm, on_delete=models.SET_NULL, null=True, blank=True)
+    allowance_type = models.CharField(max_length=20, choices=ALLOWANCE_TYPE_CHOICES)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default='UGX')
+    is_paid = models.BooleanField(default=False)
+    paid_date = models.DateTimeField(blank=True, null=True)
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_allowances')
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        teacher_user = getattr(self.teacher, 'user', None)
+        teacher_pk = getattr(self.teacher, 'pk', None)
+        teacher_name = teacher_user.get_full_name() if teacher_user else f'Teacher #{teacher_pk or "N/A"}'
+        allowance_label = dict(self.ALLOWANCE_TYPE_CHOICES).get(self.allowance_type, self.allowance_type)
+        return f"{teacher_name} - {allowance_label}"
+
+
+class OtherStaff(models.Model):
+    """
+    Track non-portal staff workers (cooks, cleaners, guards, etc.) who need to be paid
+    but don't have user accounts in the system.
+    """
+    STAFF_ROLE_CHOICES = [
+        ('cook', 'Cook'),
+        ('cleaner', 'Cleaner'),
+        ('guard', 'Guard'),
+        ('driver', 'Driver'),
+        ('laborer', 'Laborer'),
+        ('maintenance', 'Maintenance'),
+        ('other', 'Other'),
+    ]
+    
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    role = models.CharField(max_length=20, choices=STAFF_ROLE_CHOICES)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    base_salary = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default='UGX')
+    start_date = models.DateField()
+    end_date = models.DateField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_other_staff')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['first_name', 'last_name']
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name} ({self.role})"
+
+
+class StaffPayroll(models.Model):
+    """
+    Track payroll records for all staff (teachers via TeacherSalary, other staff via OtherStaff).
+    This provides a unified payroll history.
+    """
+    academic_term = models.ForeignKey(AcademicTerm, on_delete=models.SET_NULL, null=True, blank=True)
+    teacher = models.ForeignKey(Teacher, on_delete=models.SET_NULL, null=True, blank=True, related_name='payroll_records')
+    other_staff = models.ForeignKey(OtherStaff, on_delete=models.SET_NULL, null=True, blank=True, related_name='payroll_records')
+    gross_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    deductions = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0'))
+    net_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default='UGX')
+    payment_method = models.CharField(
+        max_length=50,
+        choices=[
+            ('cash', 'Cash'),
+            ('bank_transfer', 'Bank Transfer'),
+            ('mobile_money', 'Mobile Money'),
+            ('check', 'Check'),
+        ],
+        default='cash'
+    )
+    payment_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('approved', 'Approved'),
+            ('paid', 'Paid'),
+        ],
+        default='pending'
+    )
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_payroll')
+    paid_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='paid_payroll')
+    paid_date = models.DateTimeField(blank=True, null=True)
+    reference_number = models.CharField(max_length=100, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['academic_term', 'payment_status']),
+            models.Index(fields=['paid_date']),
+        ]
+
+    def __str__(self):
+        staff_name = ""
+        if self.teacher:
+            teacher_user = getattr(self.teacher, 'user', None)
+            teacher_pk = getattr(self.teacher, 'pk', None)
+            staff_name = teacher_user.get_full_name() if teacher_user else f'Teacher #{teacher_pk or "N/A"}'
+        elif self.other_staff:
+            staff_name = f"{self.other_staff.first_name} {self.other_staff.last_name}"
+        return f"Payroll: {staff_name} - {self.net_amount} ({self.payment_status})"

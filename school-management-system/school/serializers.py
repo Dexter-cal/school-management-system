@@ -10,7 +10,9 @@ from .models import (
     Payment, Invoice, ClassCharge, Event, SystemSetting, TeacherAttendance, TeacherAttendanceQRToken,
     Notification, Announcement, DocumentDraft, ExamPaper, InvoiceAdjustment, StudentGuardianLink, PrintQueueItem,
     DepositBatch, ExpenseCategory, Expense, CashbookClose, InstallmentPlan, InstallmentPlanItem,
-    FeePromise, FeeReminderLog, ResultsHoldLog, CommunicationCampaign, CommunicationDelivery  # Added new models
+    FeePromise, FeeReminderLog, ResultsHoldLog, CommunicationCampaign, CommunicationDelivery,  # Added new models
+    ExamType, AcademicCalendarEvent, TermInstallmentPlan, StudentDebtRecord, TeacherSalary, TeacherAllowance,
+    OtherStaff, StaffPayroll
 )
 from .utils import sanitize_rich_text_html
 from django.contrib.auth.models import User
@@ -61,7 +63,7 @@ class UserSerializer(serializers.ModelSerializer):
             role = obj.profile.role
         except Exception:
             role = None
-        if obj.is_superuser or role == 'superadmin' or role in ['admin', 'headteacher', 'deputy', 'dos']:
+        if obj.is_superuser or role == 'superadmin' or role in ['admin', 'director', 'headteacher', 'deputy', 'dos']:
             caps['term_manage'] = True
 
         # AI tools: teacher-only, global toggle, and requires a verified+active AI credential. 
@@ -279,9 +281,34 @@ class TimetableSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class AcademicTermSerializer(serializers.ModelSerializer):
+    assessment_exam_types = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = AcademicTerm
         fields = '__all__'
+
+    def get_assessment_exam_types(self, obj):
+        config = getattr(obj, 'assessment_config', None) or {}
+        selected_ids = config.get('selected_exam_type_ids') if isinstance(config, dict) else []
+        if not isinstance(selected_ids, list) or not selected_ids:
+            return []
+        weight_map = config.get('weights') if isinstance(config, dict) else {}
+        weight_map = weight_map if isinstance(weight_map, dict) else {}
+        exam_types = list(
+            ExamType.objects
+            .filter(id__in=selected_ids, is_active=True)
+            .values('id', 'name', 'exam_type')
+        )
+        exam_types.sort(key=lambda exam: selected_ids.index(exam['id']) if exam['id'] in selected_ids else len(selected_ids))
+        return [
+            {
+                'id': exam.get('id'),
+                'name': exam.get('name'),
+                'exam_type': exam.get('exam_type'),
+                'weight': weight_map.get(str(exam.get('id', ''))),
+            }
+            for exam in exam_types
+        ]
 
 class PromotionAuditSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source='student.__str__', read_only=True)
@@ -311,9 +338,75 @@ class IDCounterSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class GradingScaleSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True, allow_null=True)
+
+    def validate_scale_data(self, value):
+        rows = value if isinstance(value, list) else None
+        if rows is None or not rows:
+            raise serializers.ValidationError('Add at least one grading band.')
+
+        normalized = []
+        seen_grades = set()
+        for idx, row in enumerate(rows, start=1):
+            if not isinstance(row, dict):
+                raise serializers.ValidationError(f'Band {idx} must be an object.')
+            grade = str(row.get('grade') or '').strip()
+            if not grade:
+                raise serializers.ValidationError(f'Band {idx} needs a grade.')
+            if grade.lower() in seen_grades:
+                raise serializers.ValidationError(f'Grade "{grade}" is duplicated.')
+            seen_grades.add(grade.lower())
+
+            raw_min_score = row.get('min_score')
+            raw_max_score = row.get('max_score')
+            if raw_min_score in [None, ''] or raw_max_score in [None, '']:
+                raise serializers.ValidationError(f'Band {grade} must have score limits.')
+            try:
+                min_score = int(str(raw_min_score).strip())
+                max_score = int(str(raw_max_score).strip())
+            except Exception:
+                raise serializers.ValidationError(f'Band {grade} must have numeric score limits.')
+
+            if min_score < 0 or max_score > 100:
+                raise serializers.ValidationError(f'Band {grade} must stay within 0 to 100.')
+            if min_score > max_score:
+                raise serializers.ValidationError(f'Band {grade} has an invalid range.')
+
+            points = row.get('points', None)
+            if points not in [None, '']:
+                try:
+                    int(str(points).strip())
+                except Exception:
+                    raise serializers.ValidationError(f'Band {grade} points must be numeric.')
+
+            normalized.append({
+                **row,
+                'grade': grade,
+                'min_score': min_score,
+                'max_score': max_score,
+            })
+
+        normalized.sort(key=lambda item: item['min_score'])
+        if normalized[0]['min_score'] != 0:
+            raise serializers.ValidationError('The first grading band must start at 0.')
+        if normalized[-1]['max_score'] != 100:
+            raise serializers.ValidationError('The last grading band must end at 100.')
+
+        expected_min = 0
+        for row in normalized:
+            if row['min_score'] != expected_min:
+                prev = expected_min - 1
+                if row['min_score'] <= prev:
+                    raise serializers.ValidationError(f'Band "{row["grade"]}" overlaps another band.')
+                raise serializers.ValidationError(f'There is a gap before band "{row["grade"]}".')
+            expected_min = row['max_score'] + 1
+
+        return normalized
+    
     class Meta:
         model = GradingScale
         fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
 
 class UserSessionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -822,4 +915,110 @@ class CommunicationCampaignSerializer(serializers.ModelSerializer):
                 return f"{obj.student.first_name} {obj.student.last_name}".strip()
         except Exception:
             pass
+        return None
+
+
+# ==================== NEW SERIALIZERS ====================
+
+class ExamTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExamType
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+
+class AcademicCalendarEventSerializer(serializers.ModelSerializer):
+    exam_type_name = serializers.CharField(source='exam_type.name', read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = AcademicCalendarEvent
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at', 'created_by')
+
+
+class TermInstallmentPlanSerializer(serializers.ModelSerializer):
+    term_display = serializers.CharField(source='academic_term.__str__', read_only=True)
+
+    class Meta:
+        model = TermInstallmentPlan
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at', 'created_by')
+
+
+class StudentDebtRecordSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+    term_display = serializers.CharField(source='academic_term.__str__', read_only=True)
+
+    class Meta:
+        model = StudentDebtRecord
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}" if obj.student else "N/A"
+
+
+class TeacherSalarySerializer(serializers.ModelSerializer):
+    teacher_name = serializers.SerializerMethodField()
+    term_display = serializers.CharField(source='academic_term.__str__', read_only=True, allow_null=True)
+    approved_by_username = serializers.CharField(source='approved_by.username', read_only=True, allow_null=True)
+    paid_by_username = serializers.CharField(source='paid_by.username', read_only=True, allow_null=True)
+
+    class Meta:
+        model = TeacherSalary
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+    def get_teacher_name(self, obj):
+        if obj.teacher and obj.teacher.user:
+            return obj.teacher.user.get_full_name()
+        return "N/A"
+
+
+class TeacherAllowanceSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.SerializerMethodField()
+    term_display = serializers.CharField(source='academic_term.__str__', read_only=True, allow_null=True)
+    approved_by_username = serializers.CharField(source='approved_by.username', read_only=True, allow_null=True)
+
+    class Meta:
+        model = TeacherAllowance
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+    def get_teacher_name(self, obj):
+        if obj.teacher and obj.teacher.user:
+            return obj.teacher.user.get_full_name()
+        return "N/A"
+
+
+class OtherStaffSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True, allow_null=True)
+
+    class Meta:
+        model = OtherStaff
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+
+class StaffPayrollSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.SerializerMethodField()
+    other_staff_name = serializers.SerializerMethodField()
+    term_display = serializers.CharField(source='academic_term.__str__', read_only=True, allow_null=True)
+    approved_by_username = serializers.CharField(source='approved_by.username', read_only=True, allow_null=True)
+    paid_by_username = serializers.CharField(source='paid_by.username', read_only=True, allow_null=True)
+
+    class Meta:
+        model = StaffPayroll
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+    def get_teacher_name(self, obj):
+        if obj.teacher and obj.teacher.user:
+            return obj.teacher.user.get_full_name()
+        return None
+
+    def get_other_staff_name(self, obj):
+        if obj.other_staff:
+            return f"{obj.other_staff.first_name} {obj.other_staff.last_name}"
         return None

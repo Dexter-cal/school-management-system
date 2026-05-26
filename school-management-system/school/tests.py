@@ -27,8 +27,10 @@ from .models import (
     Expense,
     ExpenseCategory,
     Event,
+    ExamType,
     FeePromise,
     FeeReminderLog,
+    GradingScale,
     Invoice,
     InvoiceAdjustment,
     InstallmentPlan,
@@ -281,6 +283,134 @@ class APICredentialVerificationTests(BaseSchoolTestCase):
         smtp = mock_smtp.return_value.__enter__.return_value
         smtp.starttls.assert_called_once()
         smtp.login.assert_called_once_with('school@example.com', 'abcdefghijklmnop')
+
+
+class GradingScaleValidationTests(BaseSchoolTestCase):
+    def setUp(self):
+        self.director = self.create_user(
+            username='gradingdirector',
+            password='DirectorPass123!',
+            role='director',
+            phone_number='0701999001',
+            email_address='director@example.com',
+        )
+        self.client.force_authenticate(user=self.director)
+
+    def test_director_can_manage_grading_and_invalid_gap_is_rejected(self):
+        bad = self.client.post(
+            '/api/grading-scales/',
+            {
+                'name': 'Broken Scale',
+                'scale_data': [
+                    {'grade': 'F9', 'min_score': 0, 'max_score': 39, 'points': 9},
+                    {'grade': 'P8', 'min_score': 45, 'max_score': 59, 'points': 8},
+                    {'grade': 'D1', 'min_score': 60, 'max_score': 100, 'points': 1},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn('gap', str(bad.data).lower())
+
+        ok = self.client.post(
+            '/api/grading-scales/',
+            {
+                'name': 'Director Scale',
+                'scale_data': [
+                    {'grade': 'F9', 'min_score': 0, 'max_score': 39, 'points': 9},
+                    {'grade': 'P8', 'min_score': 40, 'max_score': 59, 'points': 8},
+                    {'grade': 'D1', 'min_score': 60, 'max_score': 100, 'points': 1},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(ok.data['created_by'], self.director.id)
+
+
+class ReportCardAggregationTests(BaseSchoolTestCase):
+    def setUp(self):
+        self.admin = self.create_user(
+            username='reportadmin',
+            password='ReportAdmin123!',
+            role='admin',
+            phone_number='0701999002',
+            email_address='reportadmin@example.com',
+        )
+        self.school_class = SchoolClass.objects.create(
+            level='P.5',
+            sections=['A'],
+            annual_fee=Decimal('700000.00'),
+            max_students_per_section=40,
+        )
+        self.term = AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=2,
+            start_date=date(2026, 5, 5),
+            end_date=date(2026, 7, 30),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+        self.student = self.create_student(
+            student_id='BJS-2026-AGG-1',
+            first_name='Lydia',
+            last_name='Namusisi',
+            school_class=self.school_class,
+        )
+        self.student_two = self.create_student(
+            student_id='BJS-2026-AGG-2',
+            first_name='Paul',
+            last_name='Ssemanda',
+            school_class=self.school_class,
+        )
+        self.term_one = AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=1,
+            start_date=date(2026, 2, 2),
+            end_date=date(2026, 4, 25),
+            holiday_break_days=0,
+            is_archived=True,
+        )
+        self.midterm = ExamType.objects.create(name='Midterm', exam_type='midterm', is_active=True)
+        self.endterm = ExamType.objects.create(name='End of Term', exam_type='endterm', is_active=True)
+        GradingScale.objects.create(
+            name='Default Test Scale',
+            is_default=True,
+            scale_data=[
+                {'grade': 'F9', 'min_score': 0, 'max_score': 39, 'points': 9},
+                {'grade': 'P8', 'min_score': 40, 'max_score': 59, 'points': 8},
+                {'grade': 'C6', 'min_score': 60, 'max_score': 79, 'points': 6},
+                {'grade': 'D1', 'min_score': 80, 'max_score': 100, 'points': 1},
+            ],
+        )
+        Mark.objects.create(student=self.student, subject='Mathematics', score=40, term=2, year=2026, exam_type=self.midterm)
+        Mark.objects.create(student=self.student, subject='Mathematics', score=80, term=2, year=2026, exam_type=self.endterm)
+        Mark.objects.create(student=self.student, subject='English', score=90, term=2, year=2026, exam_type=self.endterm)
+        Mark.objects.create(student=self.student, subject='Mathematics', score=35, term=1, year=2026, exam_type=self.midterm)
+        Mark.objects.create(student=self.student_two, subject='Mathematics', score=45, term=2, year=2026, exam_type=self.endterm)
+        Mark.objects.create(student=self.student_two, subject='English', score=42, term=2, year=2026, exam_type=self.endterm)
+        Attendance.objects.create(student=self.student, date=date(2026, 5, 6), status='Present')
+        self.client.force_authenticate(user=self.admin)
+
+    def test_summary_combines_exam_entries_by_subject(self):
+        response = self.client.get(f'/api/report-cards/summary/{self.student.pk}/2/2026/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['subjects_count'], 2)
+        self.assertEqual(response.data['exam_entries_count'], 3)
+        breakdown = {item['subject']: item for item in response.data['subject_breakdown']}
+        self.assertAlmostEqual(breakdown['Mathematics']['score'], 60.0)
+        self.assertEqual(breakdown['Mathematics']['exam_count'], 2)
+        self.assertIn('Midterm', breakdown['Mathematics']['exam_types'])
+        self.assertIn('End of Term', breakdown['Mathematics']['exam_types'])
+        self.assertEqual(response.data['strengths'][0]['subject'], 'English')
+
+    def test_class_analytics_returns_heatmap_and_risk_lists(self):
+        response = self.client.get(f'/api/report-cards/class-analytics/{self.school_class.pk}/2/2026/?section=A')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['students_with_results'], 2)
+        self.assertTrue(any(item['subject'] == 'Mathematics' for item in response.data['subject_heatmap']))
+        self.assertTrue(any(item['student_id'] == self.student.pk for item in response.data['top_improvers']))
+        self.assertTrue(any(item['student_id'] == self.student_two.pk for item in response.data['at_risk_students']))
 
 
 class DashboardSummaryTests(BaseSchoolTestCase):

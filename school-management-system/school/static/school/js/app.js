@@ -179,6 +179,7 @@ const API = {
 
 let currentUser = null;
 let EV_SHOW_PAST = false;
+let TERM_ASSESSMENT_MODAL_TERM_ID = null;
 let AN_SHOW_ARCHIVED = false;
 let AN_SHOW_EXPIRED = false;
 let CH_FILTER = { class_id: '', year: '', term: '', active: '1', published: '1' };
@@ -860,6 +861,7 @@ const NAV = {
         { label: 'Promotions', icon: 'P', page: 'promotions' },
         { label: 'Subjects', icon: 'SB', page: 'subjects' }, 
         { cap: 'term_manage', label: 'Terms', icon: 'R', page: 'terms' }, 
+        { cap: 'term_manage', label: 'Assessment Policy', icon: 'AP', page: 'assessment_policy' },
         { label: 'Report Cards', icon: 'RC', page: 'reportcards' }, 
         { label: 'Grading', icon: 'G', page: 'grading' }, 
         { label: 'Timetable', icon: 'TT', page: 'timetable' }, 
@@ -899,6 +901,7 @@ const NAV = {
         { label: 'Promotions', icon: 'P', page: 'promotions' },
         { label: 'Subjects', icon: 'SB', page: 'subjects' },
         { cap: 'term_manage', label: 'Terms', icon: 'R', page: 'terms' },
+        { cap: 'term_manage', label: 'Assessment Policy', icon: 'AP', page: 'assessment_policy' },
         { label: 'Report Cards', icon: 'RC', page: 'reportcards' },
         { label: 'Timetable', icon: 'TT', page: 'timetable' },
         { label: 'Teacher Attendance', icon: 'TA', page: 'teacher_attendance' },
@@ -934,6 +937,7 @@ const NAV = {
         { label: 'Promotions', icon: 'P', page: 'promotions' },
         { label: 'Subjects', icon: 'SB', page: 'subjects' },
         { cap: 'term_manage', label: 'Terms', icon: 'R', page: 'terms' },
+        { cap: 'term_manage', label: 'Assessment Policy', icon: 'AP', page: 'assessment_policy' },
         { label: 'Report Cards', icon: 'RC', page: 'reportcards' },
         { label: 'Timetable', icon: 'TT', page: 'timetable' },
         { label: 'Teacher Attendance', icon: 'TA', page: 'teacher_attendance' },
@@ -975,6 +979,7 @@ const NAV = {
         { label: 'Promotions', icon: 'P', page: 'promotions' },
         { label: 'Subjects', icon: 'SB', page: 'subjects' }, 
         { cap: 'term_manage', label: 'Terms', icon: 'R', page: 'terms' }, 
+        { cap: 'term_manage', label: 'Assessment Policy', icon: 'AP', page: 'assessment_policy' },
         { label: 'Report Cards', icon: 'RC', page: 'reportcards' }, 
         { label: 'Grading', icon: 'G', page: 'grading' }, 
         { section: 'School' }, 
@@ -2243,12 +2248,15 @@ async function loadPage(page, el, label) {
         const defYear = (activeTerm && activeTerm.academic_year) ? Number(activeTerm.academic_year) : Number(new Date().getFullYear());
         const defTerm = (activeTerm && activeTerm.term_number) ? Number(activeTerm.term_number) : 1;
 
-        const [students, subjects] = await Promise.all([
+        const [students, subjects, examTypes] = await Promise.all([
             API.fetch('/students/').catch(() => []),
             API.fetch('/subjects/').catch(() => []),
+            API.fetch('/exam-types/?is_active=true').catch(() => []),
         ]);
 
         const subjList = (subjects || []).filter(s => s.is_active !== false).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(s => `<option value="${escapeHtml(s.name)}"></option>`).join('');
+        const examTypeOptions = (examTypes || []).map(e => `<option value="${e.id}">${escapeHtml(e.name || e.exam_type || 'Exam')}</option>`).join('');
+        const examTypeShortcuts = (examTypes || []).slice(0, 4).map(e => `<button class="btn btn-xs btn-ghost" onclick="setMyClassExamType(${e.id})">${escapeHtml(e.name || e.exam_type || 'Exam')}</button>`).join('');
         const rows = (students || []).slice().sort((a, b) => (String(a.student_id || '')).localeCompare(String(b.student_id || ''))).map(s => `
           <tr data-stu="${s.id}">
             <td><strong>${escapeHtml((s.first_name || '') + ' ' + (s.last_name || ''))}</strong><div class="sub">${escapeHtml(s.student_id || '')}</div></td>
@@ -2291,6 +2299,9 @@ async function loadPage(page, el, label) {
                   <input class="field-input" id="mc-subject" list="mc-subj-list" placeholder="e.g. Mathematics">
                   <datalist id="mc-subj-list">${subjList}</datalist>
                 </div>
+                <div class="field" style="margin:0;min-width:220px"><label>Exam Stage</label>
+                  <select class="field-select" id="mc-exam-type"><option value="">Term weighted entry</option>${examTypeOptions}</select>
+                </div>
                 <div style="flex:1"></div>
                 <button class="btn btn-ghost" onclick="mcLoadAttendance()">Load Attendance</button>
                 <button class="btn btn-primary" onclick="mcSaveAttendance()">Save Attendance</button>
@@ -2304,7 +2315,8 @@ async function loadPage(page, el, label) {
                 <button class="btn btn-xs btn-ghost" onclick="mcSetAllAttendance('absent')">All absent</button>
                 <button class="btn btn-xs btn-ghost" onclick="mcSetAllAttendance('late')">All late</button>
                 <button class="btn btn-xs btn-ghost" onclick="mcSetAllAttendance('excused')">All excused</button>
-                <div class="sub">Marks are saved per student, subject, year and term.</div>
+                ${examTypeShortcuts ? `<div class="sub" style="font-weight:800">Exam presets:</div>${examTypeShortcuts}` : ''}
+                <div class="sub">Marks are saved per student, subject, exam stage, year and term.</div>
               </div>
             </div></div>
 
@@ -2325,17 +2337,27 @@ async function loadPage(page, el, label) {
         main.innerHTML = `
             <div class="page">
                 <div class="page-hero"><div class="page-title">Promotions / Failures</div></div>
-                <div class="card"><div class="card-body">
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
-                      <div class="field" style="margin:0;min-width:220px"><label>Class</label><select class="field-select" id="promo-class"></select></div>
-                      <div class="field" style="margin:0;min-width:120px"><label>Section</label><input class="field-input" id="promo-sec" value="A"></div>
-                      <button class="btn btn-primary" onclick="loadPromotionList()">Load Students</button>
-                      <button class="btn btn-ghost" onclick="autoPromote()">Auto-Suggest</button>
-                      <button class="btn btn-ghost" onclick="confirmPromotions()">Confirm</button>
-                    </div>
-                    <div style="margin-top:14px;overflow:auto">
+                <div class="grid-2">
+                  <div class="card"><div class="card-body">
+                      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+                        <div class="field" style="margin:0;min-width:220px"><label>Class</label><select class="field-select" id="promo-class"></select></div>
+                        <div class="field" style="margin:0;min-width:120px"><label>Section</label><input class="field-input" id="promo-sec" value="A"></div>
+                        <button class="btn btn-primary" onclick="loadPromotionList()">Load Students</button>
+                        <button class="btn btn-ghost" onclick="autoPromote()">Auto-Suggest</button>
+                        <button class="btn btn-ghost" onclick="confirmPromotions()">Confirm</button>
+                      </div>
+                      <div class="sub" style="margin-top:12px">Term 3 decisions use the full-year average across all three terms. Earlier terms use the active term average.</div>
+                  </div></div>
+                  <div class="card"><div class="card-body">
+                      <div style="font-weight:900;margin-bottom:8px">Promotion Summary</div>
+                      <div id="promo-summary" class="sub">Load a class to see promotion guidance, yearly averages, and threshold-based recommendations.</div>
+                  </div></div>
+                </div>
+                <div style="height:12px"></div>
+                <div class="card"><div class="card-body no-pad">
+                    <div class="tw">
                       <table class="tbl">
-                        <thead><tr><th>Student</th><th>System ID</th><th>Average</th><th>Position</th><th>Decision</th><th>Notes</th></tr></thead>
+                        <thead><tr><th>Student</th><th>System ID</th><th>Term Avg</th><th>Year Avg</th><th>Basis</th><th>Position</th><th>Decision</th><th>Notes</th></tr></thead>
                         <tbody id="promo-body"></tbody>
                       </table>
                     </div>
@@ -2345,7 +2367,7 @@ async function loadPage(page, el, label) {
         sel.innerHTML = classes.map(c => `<option value="${c.id}">${c.level}</option>`).join('');
     } else if (page === 'terms') {
         if (!(currentUser && currentUser.caps && currentUser.caps.term_manage)) {
-            main.innerHTML = `<div class="page"><div class="card"><div class="card-body">Only the super admin can manage terms.</div></div></div>`;
+            main.innerHTML = `<div class="page"><div class="card"><div class="card-body">Only authorized academic managers can manage terms.</div></div></div>`;
             return;
         }
         const [active, all, activeCalendar] = await Promise.all([
@@ -2356,6 +2378,7 @@ async function loadPage(page, el, label) {
         const activeHtml = active && active.academic_year ? `<div><strong>Active:</strong> Year ${active.academic_year}, Term ${active.term_number} (${active.start_date} to ${active.end_date})</div>` : `<div><strong>Active:</strong> None</div>`;
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
         const canManage = !!(currentUser && currentUser.caps && currentUser.caps.term_manage);
+        const canConfigureAssessment = ['superadmin', 'director', 'headteacher', 'dos'].includes(role);
         const calendarMeta = activeCalendar && activeCalendar.term ? `
           <div style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
             <span class="badge green">Instruction Days ${activeCalendar.instructional_days || 0}</span>
@@ -2368,6 +2391,9 @@ async function loadPage(page, el, label) {
             <button class="btn btn-xs btn-ghost" onclick="viewTermCalendar(${activeCalendar.term.id})">View Calendar</button>
             <button class="btn btn-xs btn-ghost" onclick="syncTermPublicHolidays(${activeCalendar.term.id})">Sync Public Holidays</button>
           </div>` : '';
+        const activeAssessment = active && Array.isArray(active.assessment_exam_types) && active.assessment_exam_types.length
+          ? active.assessment_exam_types.map(item => `<div class="ri"><div class="ri-info"><div class="rn">${escapeHtml(item.name || item.exam_type || 'Exam')}</div><div class="rd">${escapeHtml(item.exam_type || '')} · Weight ${fmt(Number(item.weight || 0).toFixed(0))}%</div></div></div>`).join('')
+          : `<div class="sub">No term exam structure configured yet.</div>`;
         const rows = Array.isArray(all) ? all.map(t => {
             const st = t.is_archived ? '<span class="badge">Archived</span>' : '<span class="badge green">Active</span>';
             const act = (t.is_archived && role === 'superadmin') ? `<button class="btn btn-xs btn-ghost" onclick="deleteTerm(${t.id})">Delete</button>` : '';
@@ -2385,6 +2411,7 @@ async function loadPage(page, el, label) {
               <td>
                 ${canManage ? `<button class="btn btn-xs btn-ghost" onclick="openTermEdit(${t.id})">Edit</button>` : ''}
                 ${canManage ? `<button class="btn btn-xs btn-ghost" onclick="viewTermCalendar(${t.id})">Calendar</button>` : ''}
+                ${canConfigureAssessment ? `<button class="btn btn-xs btn-ghost" onclick="openAssessmentConfig(${t.id})">Assessment</button>` : ''}
                 ${canManage ? `<button class="btn btn-xs btn-ghost" onclick="syncTermPublicHolidays(${t.id})">Holidays</button>` : ''}
                 ${mkBtn}
                 ${act}
@@ -2394,12 +2421,126 @@ async function loadPage(page, el, label) {
         main.innerHTML = ` 
             <div class="page"> 
                 <div class="page-hero"><div class="page-title">Academic Terms</div>${canManage ? `<button class="btn btn-primary" onclick="openNewTermModal()">Start New Term</button>` : ''}</div> 
-                <div class="card"><div class="card-body">${activeHtml}${calendarMeta}<div class="sub" style="margin-top:10px">New terms now archive attendance history, carry balances across years, and can sync public holidays into the calendar.</div></div></div> 
+                <div class="grid-2">
+                  <div class="card"><div class="card-body">${activeHtml}${calendarMeta}<div class="sub" style="margin-top:10px">New terms now archive attendance history, carry balances across years, and can sync public holidays into the calendar.</div></div></div>
+                  <div class="card"><div class="card-body">
+                    <div style="font-weight:900;margin-bottom:8px">Assessment Structure</div>
+                    <div class="sub" style="margin-bottom:10px">These weights decide how BOT, Midterm, and End of Term marks combine into subject averages, report cards, yearly averages, and promotion decisions.</div>
+                    ${activeAssessment}
+                    ${active && canConfigureAssessment ? `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="openAssessmentConfig(${active.id})">Quick Edit Current Term</button><button class="btn btn-primary" onclick="loadPage('assessment_policy', null, 'Assessment Policy')">Open Assessment Workspace</button></div>` : ''}
+                  </div></div>
+                </div> 
                 <div style="height:12px"></div> 
                 <div class="card"><div class="card-body no-pad"> 
                   <table class="tbl"><thead><tr><th>Year</th><th>Term</th><th>Start</th><th>End</th><th>Status</th><th>Marks</th><th></th></tr></thead><tbody>${rows}</tbody></table> 
                 </div></div> 
+            </div>
+            <div class="modal" id="modal-assessment-config"> 
+              <div class="modal-card" style="max-width:920px;width:min(920px,96vw)"> 
+                <div class="modal-head"><div style="font-weight:900">Term Assessment Setup</div><button class="x" onclick="closeModal('modal-assessment-config')">X</button></div> 
+                <div class="modal-body"> 
+                  <input type="hidden" id="ta-term-id" value="">
+                  <div id="ta-term-meta" class="sub" style="margin-bottom:10px"></div>
+                  <div class="field" style="margin:0 0 10px 0"><label>Promotion Threshold (%)</label><input class="field-input" id="ta-threshold" type="number" min="0" max="100" value="50"></div>
+                  <div class="field" style="margin:0 0 10px 0"><label>Automatic Remark Mode</label>
+                    <select class="field-select" id="ta-remark-mode">
+                      <option value="grade_band">Use grade-band remark</option>
+                      <option value="average">Use average-based remark</option>
+                    </select>
+                  </div>
+                  <div class="card"><div class="card-body no-pad"><div class="tw">
+                    <table class="tbl">
+                      <thead><tr><th>Use</th><th>Exam Name</th><th>Type</th><th>Weight %</th></tr></thead>
+                      <tbody id="ta-body"></tbody>
+                    </table>
+                  </div></div></div>
+                  <div id="ta-total" class="sub" style="margin-top:10px">Total weight: 0%</div>
+                  <div style="height:10px"></div>
+                  <button class="btn btn-primary" onclick="saveAssessmentConfig()">Save Assessment Policy</button> 
+                </div> 
+              </div> 
             </div>`; 
+    } else if (page === 'assessment_policy') {
+        const role = (currentUser.profile && currentUser.profile.role) || 'admin';
+        if (!(['superadmin', 'director', 'headteacher', 'dos'].includes(role))) {
+            throw { detail: 'Only Super Admin, Director, Head Teacher, and DOS can manage assessment policy.' };
+        }
+        const [active, all, examTypes] = await Promise.all([
+            API.fetch('/terms/').catch(() => null),
+            API.fetch('/terms/all').catch(() => []),
+            API.fetch('/exam-types/?is_active=true').catch(() => []),
+        ]);
+        const activeId = active && active.id ? Number(active.id) : (Array.isArray(all) && all[0] ? Number(all[0].id) : 0);
+        const termRows = (all || []).map(t => {
+            const configList = Array.isArray(t.assessment_exam_types) ? t.assessment_exam_types : [];
+            const summary = configList.length
+                ? configList.map(item => `${escapeHtml(item.name || item.exam_type || 'Exam')} ${fmt(Number(item.weight || 0).toFixed(0))}%`).join(' · ')
+                : 'No structure yet';
+            return `<tr>
+              <td><strong>${t.academic_year}</strong></td>
+              <td>Term ${t.term_number}</td>
+              <td>${escapeHtml(summary)}</td>
+              <td><button class="btn btn-xs btn-ghost" onclick="openAssessmentConfig(${t.id})">Edit</button></td>
+            </tr>`;
+        }).join('') || `<tr><td colspan="4" class="sub">No terms available yet.</td></tr>`;
+        main.innerHTML = `
+            <div class="page" id="assessment-policy-page">
+                <div class="page-hero"><div class="page-title">Assessment Policy</div><button class="btn btn-ghost" onclick="loadPage('terms', null, 'Terms')">Back To Terms</button></div>
+                <div class="grid-2">
+                  <div class="card"><div class="card-body">
+                    <div style="font-weight:900;margin-bottom:8px">Policy Presets</div>
+                    <div class="sub" style="margin-bottom:10px">Choose the structure your school uses, then fine-tune the weights for the current term.</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                      <button class="btn btn-primary" onclick="applyAssessmentPreset('mid_end')">Midterm + Endterm</button>
+                      <button class="btn btn-ghost" onclick="applyAssessmentPreset('bot_mid_end')">BOT + Midterm + Endterm</button>
+                      <button class="btn btn-ghost" onclick="applyAssessmentPreset('single_exam')">Single Endterm</button>
+                    </div>
+                    <div class="help-box" style="margin-top:12px">
+                      <div style="font-weight:800;margin-bottom:6px">Recommended use</div>
+                      <div class="sub">Use presets to save time, then adjust the percentages if your school wants 50/50, 40/60, or a custom 20/30/50 model.</div>
+                    </div>
+                  </div></div>
+                  <div class="card"><div class="card-body">
+                    <div style="font-weight:900;margin-bottom:8px">Active Term Snapshot</div>
+                    <div class="sub" id="assessment-active-summary">${active && active.academic_year ? `Year ${active.academic_year} Term ${active.term_number}` : 'No active term selected yet.'}</div>
+                    <div class="sub" style="margin-top:8px">Available exam stages: ${(examTypes || []).map(item => escapeHtml(item.name || item.exam_type || 'Exam')).join(', ') || 'No exam stages yet.'}</div>
+                    ${activeId ? `<div style="margin-top:12px"><button class="btn btn-ghost" onclick="openAssessmentConfig(${activeId})">Load Active Term Policy</button></div>` : ''}
+                  </div></div>
+                </div>
+                <div style="height:12px"></div>
+                <div class="grid-2">
+                  <div class="card"><div class="card-body no-pad">
+                    <table class="tbl"><thead><tr><th>Year</th><th>Term</th><th>Current Structure</th><th></th></tr></thead><tbody>${termRows}</tbody></table>
+                  </div></div>
+                  <div class="card"><div class="card-body">
+                    <div style="font-weight:900;margin-bottom:8px">Policy Editor</div>
+                    <input type="hidden" id="ta-term-id" value="">
+                    <div id="ta-term-meta" class="sub" style="margin-bottom:10px">Pick a term from the left to edit its assessment policy.</div>
+                    <div class="field" style="margin:0 0 10px 0"><label>Promotion Threshold (%)</label><input class="field-input" id="ta-threshold" type="number" min="0" max="100" value="50"></div>
+                    <div class="field" style="margin:0 0 10px 0"><label>Automatic Remark Mode</label>
+                      <select class="field-select" id="ta-remark-mode">
+                        <option value="grade_band">Use grade-band remark</option>
+                        <option value="average">Use average-based remark</option>
+                      </select>
+                    </div>
+                    <div class="card"><div class="card-body no-pad"><div class="tw">
+                      <table class="tbl">
+                        <thead><tr><th>Use</th><th>Exam Name</th><th>Type</th><th>Weight %</th></tr></thead>
+                        <tbody id="ta-body"></tbody>
+                      </table>
+                    </div></div></div>
+                    <div id="ta-total" class="sub" style="margin-top:10px">Total weight: 0%</div>
+                    <div style="height:10px"></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                      <button class="btn btn-primary" onclick="saveAssessmentConfig()">Save Assessment Policy</button>
+                      <button class="btn btn-ghost" onclick="loadPage('terms', null, 'Terms')">Done</button>
+                    </div>
+                  </div></div>
+                </div>
+            </div>`;
+        if (activeId) {
+            setTimeout(() => { try { openAssessmentConfig(activeId); } catch {} }, 0);
+        }
     } else if (page === 'reportcards') {
         const [students, classes] = await Promise.all([API.fetch('/students/'), API.fetch('/classes/')]);
         const studentOptions = students.map(s => `<option value="${s.id}">${s.first_name} ${s.last_name} (${s.student_id})</option>`).join('');
@@ -2407,15 +2548,40 @@ async function loadPage(page, el, label) {
         main.innerHTML = `
             <div class="page">
                 <div class="page-hero"><div class="page-title">Report Cards</div></div>
-                <div class="card"><div class="card-body">
-                  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
-                    <div class="field" style="margin:0;min-width:280px"><label>Student</label><select class="field-select" id="rc-stu">${studentOptions}</select></div> 
-                    <div class="field" style="margin:0;min-width:120px"><label>Term</label><select class="field-select" id="rc-term"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div> 
-                    <div class="field" style="margin:0;min-width:120px"><label>Year</label><input class="field-input" id="rc-year" type="number" value="${new Date().getFullYear()}"></div> 
-                    <button class="btn btn-primary" onclick="downloadReportCard()">Download PDF</button> 
-                    <button class="btn btn-ghost" onclick="queueReportCard()">Queue For Printing</button> 
-                  </div> 
-                </div></div> 
+                <div class="grid-2">
+                  <div class="card"><div class="card-body">
+                    <div style="font-weight:900;margin-bottom:8px">Generate Report</div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+                      <div class="field" style="margin:0;min-width:280px"><label>Student</label><select class="field-select" id="rc-stu">${studentOptions}</select></div> 
+                      <div class="field" style="margin:0;min-width:120px"><label>Term</label><select class="field-select" id="rc-term"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div> 
+                      <div class="field" style="margin:0;min-width:120px"><label>Year</label><input class="field-input" id="rc-year" type="number" value="${new Date().getFullYear()}"></div> 
+                      <button class="btn btn-ghost" onclick="previewReportSummary()">Preview Analytics</button>
+                      <button class="btn btn-primary" onclick="downloadReportCard()">Download PDF</button> 
+                      <button class="btn btn-ghost" onclick="queueReportCard()">Queue For Printing</button> 
+                    </div> 
+                  </div></div>
+                  <div class="card"><div class="card-body">
+                    <div style="font-weight:900;margin-bottom:8px">Result Analytics</div>
+                    <div id="rc-summary" class="sub">Preview a student to see strongest subject, weakest subject, yearly average, trend from previous term, attendance impact, and the automatic remark.</div>
+                  </div></div>
+                </div>
+                <div style="height:12px"></div>
+                <div class="grid-2">
+                  <div class="card"><div class="card-body">
+                    <div style="font-weight:900;margin-bottom:8px">Class Result Analytics</div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+                      <div class="field" style="margin:0;min-width:220px"><label>Class</label><select class="field-select" id="rca-class">${classOptions}</select></div>
+                      <div class="field" style="margin:0;min-width:120px"><label>Section</label><input class="field-input" id="rca-section" value="A"></div>
+                      <div class="field" style="margin:0;min-width:120px"><label>Term</label><select class="field-select" id="rca-term"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+                      <div class="field" style="margin:0;min-width:120px"><label>Year</label><input class="field-input" id="rca-year" type="number" value="${new Date().getFullYear()}"></div>
+                      <button class="btn btn-ghost" onclick="loadClassResultAnalytics()">Load Class Analytics</button>
+                    </div>
+                  </div></div>
+                  <div class="card"><div class="card-body">
+                    <div style="font-weight:900;margin-bottom:8px">Class Insights</div>
+                    <div id="rc-class-summary" class="sub">Load a class to see top improvers, at-risk students, and subject heatmap trends.</div>
+                  </div></div>
+                </div>
                 <div style="height:12px"></div>
                 <div class="card"><div class="card-body">
                   <div style="font-weight:700;margin-bottom:8px">Email All Parents (by class)</div>
@@ -2429,8 +2595,8 @@ async function loadPage(page, el, label) {
             </div>`; 
     } else if (page === 'grading') { 
         const role = (currentUser.profile && currentUser.profile.role) || 'admin'; 
-        if (!(role === 'superadmin' || role === 'dos')) { 
-            throw { detail: 'Only DOS and Super Admin can manage grading scales.' }; 
+        if (!(['superadmin', 'director', 'headteacher', 'dos'].includes(role))) { 
+            throw { detail: 'Only Super Admin, Director, Head Teacher, and DOS can manage grading scales.' }; 
         } 
         const [scales, classes] = await Promise.all([ 
             API.fetch('/grading-scales/').catch(() => []), 
@@ -2450,9 +2616,9 @@ async function loadPage(page, el, label) {
             <div class="page-hero"><div class="page-title">Grading Scales</div><button class="btn btn-primary" onclick="openGradingCreate()">New Scale</button></div> 
             <div class="grid-2">
               <div class="card"><div class="card-body"> 
-                <div style="font-weight:900;margin-bottom:8px">Simple table editor</div>
-                <div class="sub">Each row is one band: <strong>From score</strong>, <strong>To score</strong>, <strong>Grade</strong>, and optional <strong>Points</strong>. This powers report-card averages, grades, aggregates, and positions without touching raw JSON.</div> 
-                <div class="sub" style="margin-top:8px">Example: <strong>0</strong> to <strong>30</strong> = <strong>F9</strong>. Add as many bands as you want.</div>
+                <div style="font-weight:900;margin-bottom:8px">Built for 0-100 school marks</div>
+                <div class="sub">This scale now drives student averages, subject strengths, subject weaknesses, report-card grades, and parent-facing result summaries. Keep the full 0-100 range covered so every mark can be graded clearly.</div> 
+                <div class="sub" style="margin-top:8px">Typical internal-school setup: <strong>0-39 = F9</strong>, then the remaining bands continue upward to <strong>100</strong>. You can still use a simpler A-F setup if your school prefers it.</div>
                 <div class="help-box" style="margin-top:12px">
                   <div style="font-weight:800;margin-bottom:6px">Recommended for deployment</div>
                   <div class="sub">Keep one global default scale, then create class-specific overrides only when a class genuinely needs a different grading policy.</div>
@@ -2460,9 +2626,9 @@ async function loadPage(page, el, label) {
               </div></div> 
               <div class="card"><div class="card-body">
                 <div style="font-weight:900;margin-bottom:8px">What this now supports</div>
-                <div class="ri"><div class="ri-info"><div class="rn">Easy band editing</div><div class="rd">No more typing JSON by hand.</div></div></div>
-                <div class="ri"><div class="ri-info"><div class="rn">Aggregate points</div><div class="rd">Points flow into report cards and merit summaries.</div></div></div>
-                <div class="ri"><div class="ri-info"><div class="rn">Readable previews</div><div class="rd">You immediately see bands like 80-100 = A1.</div></div></div>
+                <div class="ri"><div class="ri-info"><div class="rn">Cleaner editing space</div><div class="rd">The editor opens in a wider split layout instead of one congested table.</div></div></div>
+                <div class="ri"><div class="ri-info"><div class="rn">Combined term analysis</div><div class="rd">Report summaries now expose strengths and weaknesses from the student’s term results.</div></div></div>
+                <div class="ri"><div class="ri-info"><div class="rn">Preset starters</div><div class="rd">Load Uganda-style or simpler A-F scales, then adjust them for your school.</div></div></div>
               </div></div>
             </div>
             <div style="height:12px"></div> 
@@ -2472,31 +2638,50 @@ async function loadPage(page, el, label) {
           </div> 
  
           <div class="modal" id="modal-grading"> 
-            <div class="modal-card" style="max-width:900px"> 
+            <div class="modal-card" style="max-width:1180px;width:min(1180px,96vw)"> 
               <div class="modal-head"><div style="font-weight:900">Grading Scale</div><button class="x" onclick="closeModal('modal-grading')">X</button></div> 
               <div class="modal-body"> 
                 <input type="hidden" id="g-id" value=""> 
-                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"> 
-                  <div class="field" style="margin:0;min-width:260px"><label>Name</label><input class="field-input" id="g-name" placeholder="Default Scale"></div> 
-                  <div class="field" style="margin:0;min-width:240px"><label>Attach to class (optional)</label><select class="field-select" id="g-class"><option value=\"\">(Global)</option>${(classes||[]).map(c=>`<option value=\"${c.id}\">${escapeHtml(c.level)}</option>`).join('')}</select></div> 
-                </div> 
-                <div style="height:10px"></div> 
-                <div class="card"><div class="card-body no-pad"><div class="tw">
-                  <table class="tbl">
-                    <thead><tr><th>From</th><th>To</th><th>Grade</th><th>Points</th><th>Remark</th><th>Preview</th><th></th></tr></thead>
-                    <tbody id="g-rows-body"></tbody>
-                  </table>
-                </div></div></div>
+                <div style="display:grid;grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);gap:16px;align-items:start">
+                  <div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"> 
+                      <div class="field" style="margin:0;min-width:260px;flex:1"><label>Name</label><input class="field-input" id="g-name" placeholder="Default Scale"></div> 
+                      <div class="field" style="margin:0;min-width:240px;flex:1"><label>Attach to class (optional)</label><select class="field-select" id="g-class"><option value=\"\">(Global)</option>${(classes||[]).map(c=>`<option value=\"${c.id}\">${escapeHtml(c.level)}</option>`).join('')}</select></div> 
+                    </div> 
+                    <div style="height:10px"></div> 
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                      <button class="btn btn-ghost" onclick="addGradingRow()">+ Add Band</button>
+                      <button class="btn btn-ghost" onclick="applyGradingPreset('uganda')">Uganda Starter</button>
+                      <button class="btn btn-ghost" onclick="applyGradingPreset('simple5')">Simple A-F</button>
+                      <button class="btn btn-ghost" onclick="applyGradingPreset('plusminus')">A/B/C Scale</button>
+                    </div>
+                    <div class="card"><div class="card-body no-pad"><div class="tw">
+                      <table class="tbl">
+                        <thead><tr><th>From</th><th>To</th><th>Grade</th><th>Points</th><th>Remark</th><th>Preview</th><th></th></tr></thead>
+                        <tbody id="g-rows-body"></tbody>
+                      </table>
+                    </div></div></div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:12px">
+                    <div class="help-box">
+                      <div style="font-weight:800;margin-bottom:4px">Coverage check</div>
+                      <div id="g-validation" class="sub">Bands will be checked here.</div>
+                    </div>
+                    <div class="help-box">
+                      <div style="font-weight:800;margin-bottom:4px">Live preview</div>
+                      <div id="g-preview" class="sub">Bands will appear here.</div>
+                    </div>
+                    <div class="help-box">
+                      <div style="font-weight:800;margin-bottom:8px">How reports use this</div>
+                      <div class="sub">Subject averages within a term are graded from this scale, then used for overall average, strengths, weaknesses, and parent-visible summaries.</div>
+                    </div>
+                    <div class="card"><div class="card-body">
+                      <div style="font-weight:800;margin-bottom:8px">Band map</div>
+                      <div id="g-ruler" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+                    </div></div>
+                  </div>
+                </div>
                 <textarea id="g-json" style="display:none"></textarea>
-                <div style="height:10px"></div> 
-                <div style="display:flex;gap:8px;flex-wrap:wrap">
-                  <button class="btn btn-ghost" onclick="addGradingRow()">+ Add Band</button>
-                  <button class="btn btn-ghost" onclick="loadGradingStarter()">Load Starter</button>
-                </div>
-                <div class="help-box" style="margin-top:10px">
-                  <div style="font-weight:800;margin-bottom:4px">Live preview</div>
-                  <div id="g-preview" class="sub">Bands will appear here.</div>
-                </div>
                 <div style="height:10px"></div>
                 <button class="btn btn-primary" onclick="saveGradingScale()">Save</button> 
               </div> 
@@ -6971,6 +7156,12 @@ function mcEachRow(fn) {
     document.querySelectorAll('#mc-body tr[data-stu]').forEach(fn);
 }
 
+function setMyClassExamType(examTypeId) {
+    const select = document.getElementById('mc-exam-type');
+    if (!select) return;
+    select.value = String(examTypeId || '');
+}
+
 function mcSetAllAttendance(status) {
     mcEachRow(tr => {
         const sel = tr.querySelector('.mc-att-status');
@@ -7052,9 +7243,11 @@ async function mcLoadMarks() {
     const year = (document.getElementById('mc-year')?.value || '').trim();
     const term = (document.getElementById('mc-term')?.value || '').trim();
     const subject = (document.getElementById('mc-subject')?.value || '').trim();
+    const examType = (document.getElementById('mc-exam-type')?.value || '').trim();
     if (!subject) { flash('Enter/select a subject first.'); return; }
     try {
         const qs = new URLSearchParams({ year, term, subject });
+        if (examType) qs.set('exam_type', examType);
         const marks = await API.fetch(`/marks/?${qs.toString()}`).catch(() => []);
         const map = new Map((marks || []).map(m => [Number(m.student), m]));
         mcEachRow(tr => {
@@ -7079,6 +7272,7 @@ async function mcSaveMarks() {
     const year = (document.getElementById('mc-year')?.value || '').trim();
     const term = (document.getElementById('mc-term')?.value || '').trim();
     const subject = (document.getElementById('mc-subject')?.value || '').trim();
+    const examType = (document.getElementById('mc-exam-type')?.value || '').trim();
     if (!subject) { flash('Enter/select a subject.'); return; }
     if (!year || !term) { flash('Set year and term.'); return; }
 
@@ -7098,7 +7292,9 @@ async function mcSaveMarks() {
     if (!items.length) { flash('Enter at least one score to save.'); return; }
 
     try {
-        const res = await API.fetch('/marks/bulk-upsert/', { method: 'POST', body: JSON.stringify({ year, term, subject, items }) });
+        const payload = { year, term, subject, items };
+        if (examType) payload.exam_type = Number(examType);
+        const res = await API.fetch('/marks/bulk-upsert/', { method: 'POST', body: JSON.stringify(payload) });
         flash(`Marks saved (${res && res.saved ? res.saved : 0}).`);
         try { await mcLoadMarks(); } catch {}
         try { mcRefreshStats(); } catch {}
@@ -7512,6 +7708,7 @@ async function startNewTerm() {
     const auto_generate_invoices = document.getElementById('nt-fees').checked;
     const sms_parents = document.getElementById('nt-sms').checked;
     const open_mark_entry = document.getElementById('nt-marks').checked;
+    const assessment_config = defaultAssessmentConfigPayload();
 
     if (!academic_year || !term_number || !start_date || !end_date) {
         flash('Fill Academic Year, Term Number, Start Date, and End Date.');
@@ -7523,7 +7720,7 @@ async function startNewTerm() {
     }
 
     try {
-        await API.fetch('/terms/start-new/', { method: 'POST', body: JSON.stringify({ academic_year, term_number, start_date, end_date, holiday_break_days, auto_generate_invoices, sms_parents, open_mark_entry }) });
+        await API.fetch('/terms/start-new/', { method: 'POST', body: JSON.stringify({ academic_year, term_number, start_date, end_date, holiday_break_days, auto_generate_invoices, sms_parents, open_mark_entry, assessment_config }) });
         closeModal('modal-term');
         flash('New term started.');
         refreshTermChip();
@@ -7531,6 +7728,119 @@ async function startNewTerm() {
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Failed to start term.');
     }
+}
+
+function defaultAssessmentConfigPayload() {
+    return {
+        selected_exam_type_ids: [],
+        weights: {},
+        promotion_threshold: 50,
+        remark_mode: 'grade_band',
+    };
+}
+
+function assessmentRowsPayload() {
+    const rows = Array.from(document.querySelectorAll('#ta-body tr[data-exam-id]'));
+    const selected_exam_type_ids = [];
+    const weights = {};
+    rows.forEach(row => {
+        const examId = Number(row.getAttribute('data-exam-id') || 0);
+        const checked = !!row.querySelector('.ta-enabled')?.checked;
+        const weight = Number(row.querySelector('.ta-weight')?.value || 0);
+        if (checked && examId) {
+            selected_exam_type_ids.push(examId);
+            weights[String(examId)] = weight;
+        }
+    });
+    return {
+        selected_exam_type_ids,
+        weights,
+        promotion_threshold: Number(document.getElementById('ta-threshold')?.value || 50),
+        remark_mode: document.getElementById('ta-remark-mode')?.value || 'grade_band',
+    };
+}
+
+function updateAssessmentWeightTotal() {
+    const payload = assessmentRowsPayload();
+    const total = Object.values(payload.weights).reduce((sum, value) => sum + Number(value || 0), 0);
+    const el = document.getElementById('ta-total');
+    if (!el) return;
+    el.innerHTML = total === 100
+        ? `<span class="badge green">Ready</span> <span class="sub">Total weight: ${fmt(total.toFixed(0))}%</span>`
+        : `<span class="badge red">Adjust</span> <span class="sub">Total weight: ${fmt(total.toFixed(0))}% (must equal 100%)</span>`;
+}
+
+function applyAssessmentPreset(kind = 'mid_end') {
+    const rows = Array.from(document.querySelectorAll('#ta-body tr[data-exam-id]'));
+    if (!rows.length) { flash('Load a term first.'); return; }
+    const presetMap = {
+        mid_end: { midterm: 50, endterm: 50 },
+        bot_mid_end: { beginning: 20, midterm: 30, endterm: 50 },
+        single_exam: { endterm: 100 },
+    };
+    const preset = presetMap[kind] || presetMap.mid_end;
+    rows.forEach(row => {
+        const type = String(row.querySelector('td:nth-child(3)')?.textContent || '').trim().toLowerCase();
+        const cb = row.querySelector('.ta-enabled');
+        const weight = row.querySelector('.ta-weight');
+        const value = Object.prototype.hasOwnProperty.call(preset, type) ? Number(preset[type]) : 0;
+        if (cb) cb.checked = value > 0;
+        if (weight) weight.value = String(value);
+    });
+    updateAssessmentWeightTotal();
+}
+
+async function openAssessmentConfig(termId) {
+    const [term, examTypes] = await Promise.all([
+        API.fetch(`/terms/all`).then(items => (items || []).find(t => Number(t.id) === Number(termId))),
+        API.fetch('/exam-types/?is_active=true').catch(() => []),
+    ]);
+    if (!term) { flash('Term not found.'); return; }
+    TERM_ASSESSMENT_MODAL_TERM_ID = Number(termId);
+    const config = term.assessment_config || defaultAssessmentConfigPayload();
+    const selectedIds = Array.isArray(config.selected_exam_type_ids) ? config.selected_exam_type_ids.map(Number) : [];
+    const weights = (config.weights && typeof config.weights === 'object') ? config.weights : {};
+    document.getElementById('ta-term-id').value = String(term.id);
+    document.getElementById('ta-term-meta').textContent = `Year ${term.academic_year} · Term ${term.term_number}`;
+    document.getElementById('ta-threshold').value = String(config.promotion_threshold || 50);
+    document.getElementById('ta-remark-mode').value = config.remark_mode || 'grade_band';
+    const body = document.getElementById('ta-body');
+    if (body) {
+        body.innerHTML = (examTypes || []).map(exam => {
+            const examId = Number(exam.id);
+            const checked = selectedIds.includes(examId);
+            const weight = checked ? Number(weights[String(examId)] || 0) : 0;
+            return `<tr data-exam-id="${examId}">
+              <td><input type="checkbox" class="ta-enabled" ${checked ? 'checked' : ''} onchange="updateAssessmentWeightTotal()"></td>
+              <td>${escapeHtml(exam.name || '')}</td>
+              <td>${escapeHtml(exam.exam_type || '')}</td>
+              <td><input class="field-input ta-weight" type="number" min="0" max="100" value="${weight}" oninput="updateAssessmentWeightTotal()"></td>
+            </tr>`;
+        }).join('') || `<tr><td colspan="4" class="sub">No exam types found.</td></tr>`;
+    }
+    updateAssessmentWeightTotal();
+    const pageWorkspace = document.getElementById('assessment-policy-page');
+    if (pageWorkspace) {
+        try { document.getElementById('ta-term-meta')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+        return;
+    }
+    openModal('modal-assessment-config');
+}
+
+async function saveAssessmentConfig() {
+    const termId = Number(document.getElementById('ta-term-id')?.value || 0);
+    if (!termId) { flash('Select a term first.'); return; }
+    const payload = assessmentRowsPayload();
+    const total = Object.values(payload.weights).reduce((sum, value) => sum + Number(value || 0), 0);
+    if (!payload.selected_exam_type_ids.length) { flash('Pick at least one exam stage for this term.'); return; }
+    if (Math.round(total) !== 100) { flash('Exam weights must add up to 100%.'); return; }
+    await API.fetch(`/terms/${termId}/configure-assessment/`, {
+        method: 'POST',
+        body: JSON.stringify({ assessment_config: payload }),
+    });
+    if (document.getElementById('modal-assessment-config')) closeModal('modal-assessment-config');
+    flash('Assessment policy saved.');
+    loadPage(CURRENT_PAGE === 'assessment_policy' ? 'assessment_policy' : 'terms');
 }
 
 let promoRows = [];
@@ -7543,13 +7853,26 @@ async function loadPromotionList() {
 
 function renderPromotionRows() {
     const body = document.getElementById('promo-body');
+    const summary = document.getElementById('promo-summary');
     if (!body) return;
+    const total = promoRows.length;
+    const promoteCount = promoRows.filter(r => r.suggested_decision === 'promote').length;
+    const repeatCount = promoRows.filter(r => r.suggested_decision === 'repeat_year').length;
+    const graduateCount = promoRows.filter(r => r.suggested_decision === 'graduate').length;
+    const basisLabel = promoRows.some(r => r.promotion_basis === 'yearly_average') ? 'Yearly average across Term 1-3' : 'Current term average';
+    if (summary) {
+        summary.innerHTML = total
+            ? `Students loaded: <strong>${total}</strong> · Promote: <strong>${promoteCount}</strong> · Repeat: <strong>${repeatCount}</strong> · Graduate: <strong>${graduateCount}</strong><br>Decision basis: ${basisLabel}`
+            : 'Load a class to see promotion guidance, yearly averages, and threshold-based recommendations.';
+    }
     body.innerHTML = promoRows.map(r => `
       <tr>
-        <td>${r.first_name} ${r.last_name}</td>
-        <td>${r.student_system_id}</td>
-        <td>${r.term_average}%</td>
-        <td>${r.class_position}</td>
+        <td><strong>${escapeHtml(`${r.first_name || ''} ${r.last_name || ''}`.trim())}</strong></td>
+        <td>${escapeHtml(r.student_system_id || '')}</td>
+        <td>${fmt(Number(r.term_average || 0).toFixed(2))}%</td>
+        <td>${r.yearly_average === null || r.yearly_average === undefined ? '<span class="sub">Not yet final</span>' : `${fmt(Number(r.yearly_average || 0).toFixed(2))}%`}</td>
+        <td>${r.promotion_basis === 'yearly_average' ? '<span class="badge green">Yearly Avg</span>' : '<span class="badge">Term Avg</span>'}</td>
+        <td>${r.class_position || '-'}</td>
         <td>
           <select class="field-select" onchange="onPromoDecision(${r.student_id}, this.value)" style="min-width:140px">
             <option value="promote" ${r.suggested_decision === 'promote' ? 'selected' : ''}>Promote</option>
@@ -7579,7 +7902,7 @@ async function autoPromote() {
     const map = new Map(suggestions.map(s => [s.student_id, s]));
     promoRows = promoRows.map(r => {
         const s = map.get(r.student_id);
-        return s ? { ...r, suggested_decision: s.decision, term_average: s.term_average, promotion_notes: s.notes || r.promotion_notes } : r;
+        return s ? { ...r, suggested_decision: s.decision, term_average: s.term_average, yearly_average: s.yearly_average, yearly_term_breakdown: s.yearly_term_breakdown, promotion_basis: s.promotion_basis, promotion_notes: s.notes || r.promotion_notes } : r;
     });
     renderPromotionRows();
     flash('Auto-suggestions applied.');
@@ -7667,20 +7990,91 @@ async function emailAllParents() {
     await API.fetch('/report-cards/email-all-parents/', { method: 'POST', body: JSON.stringify({ class_id, term_number, academic_year }) }); 
     flash('Emails sent (console backend in dev).'); 
 } 
+
+async function previewReportSummary() {
+    const student_id = document.getElementById('rc-stu')?.value;
+    const term_number = document.getElementById('rc-term')?.value;
+    const academic_year = document.getElementById('rc-year')?.value;
+    if (!student_id || !term_number || !academic_year) { flash('Choose student, term, and year first.'); return; }
+    const data = await API.fetch(`/report-cards/summary/${student_id}/${term_number}/${academic_year}/`);
+    const summary = document.getElementById('rc-summary');
+    if (!summary) return;
+    const strengths = (data.strengths || []).map(item => `${escapeHtml(item.subject || '')} (${fmt(Number(item.score || 0).toFixed(1))}%)`).join(', ') || 'None yet';
+    const weaknesses = (data.weaknesses || []).map(item => `${escapeHtml(item.subject || '')} (${fmt(Number(item.score || 0).toFixed(1))}%)`).join(', ') || 'None yet';
+    const trend = data.trend_from_previous_term && data.trend_from_previous_term.previous_term_average != null
+        ? `Trend from T${data.trend_from_previous_term.previous_term_number}: ${fmt(Number(data.trend_from_previous_term.delta || 0).toFixed(1))}%`
+        : 'No previous term trend yet';
+    const yearly = data.yearly_average != null ? `${fmt(Number(data.yearly_average || 0).toFixed(1))}%` : 'Not enough term data';
+    const examPolicy = (data.assessment_config && data.assessment_config.selected_exam_types || []).map(item => `${escapeHtml(item.name || '')} ${fmt(Number(item.weight || 0).toFixed(0))}%`).join(', ') || 'Default weighting';
+    const yearlyBreakdown = (data.yearly_term_breakdown || []).map(item => `T${item.term_number}: ${item.average == null ? 'Pending' : `${fmt(Number(item.average || 0).toFixed(1))}%`}`).join(' · ') || 'No yearly breakdown yet';
+    summary.innerHTML = `
+      <div class="ri"><div class="ri-info"><div class="rn">Overall</div><div class="rd">Average ${fmt(Number(data.overall_average || 0).toFixed(1))}% · Grade ${escapeHtml(data.overall_grade || 'N/A')} · Position ${data.class_position || '-'}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Automatic Remark</div><div class="rd">${escapeHtml(data.automatic_remark || '-')}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Strongest Subjects</div><div class="rd">${strengths}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Weakest Subjects</div><div class="rd">${weaknesses}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Trend and Attendance</div><div class="rd">${escapeHtml(trend)} · ${escapeHtml(data.attendance_impact || '')}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Yearly Projection</div><div class="rd">Year average ${yearly} · ${escapeHtml(yearlyBreakdown)}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Exam Weighting</div><div class="rd">${examPolicy}</div></div></div>`;
+}
+
+async function loadClassResultAnalytics() {
+    const classId = document.getElementById('rca-class')?.value;
+    const term = document.getElementById('rca-term')?.value;
+    const year = document.getElementById('rca-year')?.value;
+    const section = (document.getElementById('rca-section')?.value || '').trim().toUpperCase();
+    if (!classId || !term || !year) { flash('Choose class, term, and year first.'); return; }
+    const data = await API.fetch(`/report-cards/class-analytics/${classId}/${term}/${year}/?section=${encodeURIComponent(section || 'A')}`);
+    const target = document.getElementById('rc-class-summary');
+    if (!target) return;
+    const improvers = (data.top_improvers || []).map(item => `${escapeHtml(item.student_name || '')} (+${fmt(Number(item.trend_delta || 0).toFixed(1))}%)`).join(', ') || 'No trend data yet';
+    const riskList = (data.at_risk_students || []).map(item => `${escapeHtml(item.student_name || '')} (${fmt(Number(item.term_average || 0).toFixed(1))}% · ${escapeHtml((item.risk_reasons || []).join(', '))})`).join('<br>') || 'No high-risk students flagged.';
+    const heatmap = (data.subject_heatmap || []).map(item => `${escapeHtml(item.subject || '')}: avg ${fmt(Number(item.average_score || 0).toFixed(1))}% · pass ${fmt(Number(item.pass_rate || 0).toFixed(0))}%`).join('<br>') || 'No subject heatmap yet.';
+    target.innerHTML = `
+      <div class="ri"><div class="ri-info"><div class="rn">Class Overview</div><div class="rd">${escapeHtml(data.class_level || '')}${data.section ? ` ${escapeHtml(data.section)}` : ''} · ${data.students_with_results || 0} students with results · class average ${fmt(Number(data.class_average || 0).toFixed(1))}%</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Top Improvers</div><div class="rd">${improvers}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">At-Risk Students</div><div class="rd">${riskList}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Subject Heatmap</div><div class="rd">${heatmap}</div></div></div>
+      <div class="ri"><div class="ri-info"><div class="rn">Strongest vs Weakest</div><div class="rd">${data.strongest_subject ? `${escapeHtml(data.strongest_subject.subject)} (${fmt(Number(data.strongest_subject.average_score || 0).toFixed(1))}%)` : 'N/A'} · ${data.weakest_subject ? `${escapeHtml(data.weakest_subject.subject)} (${fmt(Number(data.weakest_subject.average_score || 0).toFixed(1))}%)` : 'N/A'}</div></div></div>`;
+}
  
 // ----- Grading ----- 
 function gradingStarterRows() {
     return [
-        { min_score: 0, max_score: 29, grade: 'F9', points: 9, remark: 'Fail' },
-        { min_score: 30, max_score: 39, grade: 'P8', points: 8, remark: 'Weak pass' },
-        { min_score: 40, max_score: 49, grade: 'P7', points: 7, remark: 'Pass' },
-        { min_score: 50, max_score: 59, grade: 'C6', points: 6, remark: 'Fair' },
-        { min_score: 60, max_score: 69, grade: 'C5', points: 5, remark: 'Good' },
-        { min_score: 70, max_score: 79, grade: 'C4', points: 4, remark: 'Credit' },
-        { min_score: 80, max_score: 89, grade: 'C3', points: 3, remark: 'Strong credit' },
-        { min_score: 90, max_score: 94, grade: 'D2', points: 2, remark: 'Distinction' },
-        { min_score: 95, max_score: 100, grade: 'D1', points: 1, remark: 'Top distinction' },
+        { min_score: 0, max_score: 39, grade: 'F9', points: 9, remark: 'Fail' },
+        { min_score: 40, max_score: 49, grade: 'P8', points: 8, remark: 'Weak pass' },
+        { min_score: 50, max_score: 59, grade: 'P7', points: 7, remark: 'Pass' },
+        { min_score: 60, max_score: 69, grade: 'C6', points: 6, remark: 'Fair credit' },
+        { min_score: 70, max_score: 74, grade: 'C5', points: 5, remark: 'Credit' },
+        { min_score: 75, max_score: 79, grade: 'C4', points: 4, remark: 'Strong credit' },
+        { min_score: 80, max_score: 84, grade: 'C3', points: 3, remark: 'Good credit' },
+        { min_score: 85, max_score: 89, grade: 'D2', points: 2, remark: 'Distinction' },
+        { min_score: 90, max_score: 100, grade: 'D1', points: 1, remark: 'Top distinction' },
     ];
+}
+
+function gradingPresetRows(kind = 'uganda') {
+    const preset = String(kind || 'uganda').trim().toLowerCase();
+    if (preset === 'simple5') {
+        return [
+            { min_score: 0, max_score: 39, grade: 'F', points: 0, remark: 'Fail' },
+            { min_score: 40, max_score: 49, grade: 'D', points: 1, remark: 'Needs support' },
+            { min_score: 50, max_score: 59, grade: 'C', points: 2, remark: 'Average' },
+            { min_score: 60, max_score: 79, grade: 'B', points: 3, remark: 'Good' },
+            { min_score: 80, max_score: 100, grade: 'A', points: 4, remark: 'Excellent' },
+        ];
+    }
+    if (preset === 'plusminus') {
+        return [
+            { min_score: 0, max_score: 39, grade: 'F', points: 0, remark: 'Fail' },
+            { min_score: 40, max_score: 49, grade: 'D', points: 1, remark: 'Needs support' },
+            { min_score: 50, max_score: 59, grade: 'C', points: 2, remark: 'Average' },
+            { min_score: 60, max_score: 69, grade: 'B-', points: 3, remark: 'Fairly good' },
+            { min_score: 70, max_score: 79, grade: 'B', points: 4, remark: 'Good' },
+            { min_score: 80, max_score: 89, grade: 'A-', points: 5, remark: 'Very good' },
+            { min_score: 90, max_score: 100, grade: 'A', points: 6, remark: 'Excellent' },
+        ];
+    }
+    return gradingStarterRows();
 }
 
 function normalizeGradingRows(rows) {
@@ -7708,11 +8102,56 @@ function gradingBandSummary(rows) {
     return preview + extra;
 }
 
+function gradingValidation(rows) {
+    const normalized = normalizeGradingRows(rows);
+    if (!normalized.length) return { ok: false, messages: ['Add at least one grading band.'], normalized };
+    const messages = [];
+    const seen = new Set();
+    let expected = 0;
+    normalized.forEach((row, idx) => {
+        if (!row.grade) messages.push(`Band ${idx + 1} needs a grade.`);
+        if (row.min_score < 0 || row.max_score > 100) messages.push(`${gradingRowPreview(row)} must stay inside 0-100.`);
+        if (row.min_score > row.max_score) messages.push(`${gradingRowPreview(row)} has an invalid range.`);
+        const key = String(row.grade || '').trim().toLowerCase();
+        if (key) {
+            if (seen.has(key)) messages.push(`Grade ${row.grade} is duplicated.`);
+            seen.add(key);
+        }
+        if (row.min_score !== expected) {
+            if (row.min_score < expected) messages.push(`${gradingRowPreview(row)} overlaps another band.`);
+            else messages.push(`There is a gap before ${gradingRowPreview(row)}.`);
+        }
+        expected = row.max_score + 1;
+    });
+    if (normalized[0].min_score !== 0) messages.push('The first band should start at 0.');
+    if (normalized[normalized.length - 1].max_score !== 100) messages.push('The last band should end at 100.');
+    return { ok: messages.length === 0, messages, normalized };
+}
+
 function syncGradingJsonMirror() {
     const json = document.getElementById('g-json');
     if (json) json.value = JSON.stringify(normalizeGradingRows(GRADING_ROWS), null, 2);
     const preview = document.getElementById('g-preview');
     if (preview) preview.innerHTML = gradingBandSummary(GRADING_ROWS);
+    const validation = gradingValidation(GRADING_ROWS);
+    const status = document.getElementById('g-validation');
+    if (status) {
+        status.innerHTML = validation.ok
+            ? '<span class="badge green">Ready</span> <span class="sub">Coverage is complete from 0 to 100 with no gaps.</span>'
+            : validation.messages.map(msg => `<div class="sub" style="color:#B71C1C;margin:0 0 4px 0">${escapeHtml(msg)}</div>`).join('');
+    }
+    const ruler = document.getElementById('g-ruler');
+    if (ruler) {
+        const rows = validation.normalized || normalizeGradingRows(GRADING_ROWS);
+        ruler.innerHTML = rows.map(row => {
+            const span = Math.max(1, (Number(row.max_score) - Number(row.min_score) + 1));
+            return `<div style="flex:${span} 0 0;min-width:70px;background:#fff;border:1px solid var(--e);border-radius:12px;padding:10px 12px">
+              <div style="font-weight:800;color:var(--m)">${escapeHtml(row.grade || '-')}</div>
+              <div class="sub">${escapeHtml(String(row.min_score))} to ${escapeHtml(String(row.max_score))}</div>
+              <div class="sub">${escapeHtml(row.remark || '')}</div>
+            </div>`;
+        }).join('') || '<div class="sub">No grading bands yet.</div>';
+    }
 }
 
 function renderGradingRows() {
@@ -7760,6 +8199,11 @@ function loadGradingStarter() {
     renderGradingRows();
 }
 
+function applyGradingPreset(kind) {
+    GRADING_ROWS = gradingPresetRows(kind);
+    renderGradingRows();
+}
+
 function openGradingCreate() { 
     const id = document.getElementById('g-id'); 
     const name = document.getElementById('g-name'); 
@@ -7788,12 +8232,8 @@ async function saveGradingScale() {
     const school_class = (document.getElementById('g-class').value || '').trim() || null; 
     if (!name) { flash('Name is required.'); return; } 
     const scale_data = normalizeGradingRows(GRADING_ROWS);
-    if (!scale_data.length) { flash('Add at least one grading band.'); return; }
-    for (const row of scale_data) {
-        if (!row.grade) { flash('Each grading band needs a grade.'); return; }
-        if (!Number.isFinite(row.min_score) || !Number.isFinite(row.max_score)) { flash('Every grading band needs valid score limits.'); return; }
-        if (row.min_score > row.max_score) { flash(`Invalid band ${gradingRowPreview(row)}. "From" cannot be greater than "To".`); return; }
-    }
+    const validation = gradingValidation(scale_data);
+    if (!validation.ok) { flash(validation.messages[0] || 'Fix the grading bands first.'); return; }
     const payload = { name, scale_data, school_class }; 
     try { 
         if (id) await API.fetch(`/grading-scales/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }); 
@@ -8117,7 +8557,8 @@ async function verifyCredential(id) {
         // Refresh so the "last verified" status is visible immediately.
         try { loadPage('credentials'); } catch {}
     } catch (e) {
-        flash(`Verify failed: ${(e && e.detail) ? e.detail : 'Request failed'}`);
+        const extraError = e && e.extra && (e.extra.error || e.extra.response);
+        flash(`Verify failed: ${(e && e.detail) ? e.detail : (extraError || 'Request failed')}`);
     }
 }
 

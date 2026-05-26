@@ -48,6 +48,15 @@ from .models import (
     Timetable,
     UserProfile,
     UserSession,
+    # New models
+    ExamType,
+    AcademicCalendarEvent,
+    TermInstallmentPlan,
+    StudentDebtRecord,
+    TeacherSalary,
+    TeacherAllowance,
+    OtherStaff,
+    StaffPayroll,
 )
 
 
@@ -801,3 +810,101 @@ admin.site.register(Timetable)
 admin.site.register(AlumniRegister)
 admin.site.register(IDCounter)
 admin.site.register(GradingScale)
+
+
+# ==================== NEW MODEL ADMIN REGISTRATIONS ====================
+
+@admin.register(ExamType)
+class ExamTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'exam_type', 'is_active', 'created_at')
+    list_filter = ('exam_type', 'is_active', 'created_at')
+    search_fields = ('name', 'description')
+
+
+@admin.register(AcademicCalendarEvent)
+class AcademicCalendarEventAdmin(admin.ModelAdmin):
+    list_display = ('title', 'event_type', 'event_date', 'academic_term', 'created_by')
+    list_filter = ('event_type', 'event_date', 'academic_term', 'notify_parents', 'notify_teachers')
+    search_fields = ('title', 'description')
+    date_hierarchy = 'event_date'
+    readonly_fields = ('created_by', 'created_at', 'updated_at')
+    
+    def save_model(self, request, obj, form, change):
+        if not obj.created_by:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(TermInstallmentPlan)
+class TermInstallmentPlanAdmin(admin.ModelAdmin):
+    list_display = ('academic_term', 'number_of_installments', 'created_by', 'created_at')
+    list_filter = ('number_of_installments', 'created_at')
+    readonly_fields = ('created_by', 'created_at', 'updated_at')
+    
+    def save_model(self, request, obj, form, change):
+        if not obj.created_by:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(StudentDebtRecord)
+class StudentDebtRecordAdmin(admin.ModelAdmin):
+    list_display = ('student', 'academic_term', 'outstanding_amount', 'is_settled', 'created_at')
+    list_filter = ('is_settled', 'academic_term', 'created_at')
+    search_fields = ('student__first_name', 'student__last_name')
+    readonly_fields = ('created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+
+
+@admin.register(TeacherSalary)
+class TeacherSalaryAdmin(admin.ModelAdmin):
+    list_display = ('teacher', 'academic_term', 'base_salary', 'payment_status', 'paid_date', 'created_at')
+    list_filter = ('payment_status', 'academic_term', 'created_at', 'paid_date')
+    search_fields = ('teacher__user__first_name', 'teacher__user__last_name')
+    readonly_fields = ('created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+
+
+@admin.register(TeacherAllowance)
+class TeacherAllowanceAdmin(admin.ModelAdmin):
+    list_display = ('teacher', 'allowance_type', 'amount', 'is_paid', 'academic_term', 'created_at')
+    list_filter = ('allowance_type', 'is_paid', 'academic_term', 'created_at')
+    search_fields = ('teacher__user__first_name', 'teacher__user__last_name')
+    readonly_fields = ('created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+
+
+@admin.register(OtherStaff)
+class OtherStaffAdmin(admin.ModelAdmin):
+    list_display = ('get_full_name', 'role', 'base_salary', 'is_active', 'start_date', 'end_date')
+    list_filter = ('role', 'is_active', 'start_date')
+    search_fields = ('first_name', 'last_name', 'email', 'phone_number')
+    readonly_fields = ('created_by', 'created_at', 'updated_at')
+    date_hierarchy = 'start_date'
+    
+    @admin.display(description='Name')
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}"
+    
+    def save_model(self, request, obj, form, change):
+        if not obj.created_by:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(StaffPayroll)
+class StaffPayrollAdmin(admin.ModelAdmin):
+    list_display = ('get_staff_name', 'academic_term', 'net_amount', 'payment_status', 'paid_date', 'created_at')
+    list_filter = ('payment_status', 'academic_term', 'payment_method', 'created_at', 'paid_date')
+    search_fields = ('teacher__user__first_name', 'teacher__user__last_name', 'other_staff__first_name', 'other_staff__last_name')
+    readonly_fields = ('created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+    
+    @admin.display(description='Staff Member')
+    def get_staff_name(self, obj):
+        if obj.teacher:
+            teacher_user = getattr(obj.teacher, 'user', None)
+            return teacher_user.get_full_name() if teacher_user else f'Teacher #{obj.teacher_id or "N/A"}'
+        elif obj.other_staff:
+            return f"{obj.other_staff.first_name} {obj.other_staff.last_name}"
+        return "N/A"

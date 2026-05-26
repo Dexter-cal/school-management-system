@@ -13,6 +13,9 @@ from .views import (
     DepositBatchViewSet, CashbookCloseViewSet, InstallmentPlanViewSet, FeePromiseViewSet,
     FeeReminderLogViewSet, ExpenseCategoryViewSet, ExpenseViewSet,
     CommunicationCampaignViewSet, CommunicationDeliveryViewSet,
+    # New viewsets
+    ExamTypeViewSet, AcademicCalendarEventViewSet, TermInstallmentPlanViewSet, StudentDebtRecordViewSet,
+    TeacherSalaryViewSet, TeacherAllowanceViewSet, OtherStaffViewSet, StaffPayrollViewSet,
     index  # Added new ViewSets
 )
 
@@ -60,6 +63,16 @@ router.register(r'expense-categories', ExpenseCategoryViewSet, basename='expense
 router.register(r'expenses', ExpenseViewSet, basename='expenses')
 router.register(r'communication-campaigns', CommunicationCampaignViewSet, basename='communication-campaigns')
 router.register(r'communication-deliveries', CommunicationDeliveryViewSet, basename='communication-deliveries')
+
+# New model routers
+router.register(r'exam-types', ExamTypeViewSet, basename='exam-types')
+router.register(r'academic-calendar-events', AcademicCalendarEventViewSet, basename='academic-calendar-events')
+router.register(r'term-installment-plans', TermInstallmentPlanViewSet, basename='term-installment-plans')
+router.register(r'student-debts', StudentDebtRecordViewSet, basename='student-debts')
+router.register(r'teacher-salaries', TeacherSalaryViewSet, basename='teacher-salaries')
+router.register(r'teacher-allowances', TeacherAllowanceViewSet, basename='teacher-allowances')
+router.register(r'other-staff', OtherStaffViewSet, basename='other-staff')
+router.register(r'staff-payroll', StaffPayrollViewSet, basename='staff-payroll')
 
 urlpatterns = [
     path('', index, name='index'),

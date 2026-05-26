@@ -17,7 +17,9 @@ from .models import (
     APICredential, APICredentialHealthLog, Payment, Invoice, ClassCharge, Event, SystemSetting, TeacherAttendance, TeacherAttendanceQRToken, 
     Notification, Announcement, ExamPaper, InvoiceAdjustment, StudentGuardianLink, PrintQueueItem,
     DepositBatch, ExpenseCategory, Expense, CashbookClose, InstallmentPlan, InstallmentPlanItem,
-    FeePromise, FeeReminderLog, ResultsHoldLog, CommunicationCampaign, CommunicationDelivery  # Added new models 
+    FeePromise, FeeReminderLog, ResultsHoldLog, CommunicationCampaign, CommunicationDelivery,  # Added new models
+    ExamType, AcademicCalendarEvent, TermInstallmentPlan, StudentDebtRecord, TeacherSalary, TeacherAllowance,
+    OtherStaff, StaffPayroll
 ) 
 from .serializers import ( 
     SchoolClassSerializer, SubjectSerializer, ClassSubjectSerializer, DocumentDraftSerializer, TeacherSerializer, StudentSerializer, 
@@ -32,7 +34,9 @@ from .serializers import (
     DepositBatchSerializer, ExpenseCategorySerializer, ExpenseSerializer, CashbookCloseSerializer,
     InstallmentPlanSerializer, InstallmentPlanItemSerializer, FeePromiseSerializer,
     FeeReminderLogSerializer, ResultsHoldLogSerializer, CommunicationCampaignSerializer,
-    CommunicationDeliverySerializer
+    CommunicationDeliverySerializer,
+    ExamTypeSerializer, AcademicCalendarEventSerializer, TermInstallmentPlanSerializer, StudentDebtRecordSerializer,
+    TeacherSalarySerializer, TeacherAllowanceSerializer, OtherStaffSerializer, StaffPayrollSerializer
 ) 
 from .utils import (
     generate_graduation_certificate_pdf, send_sms, generate_random_password, generate_otp,
@@ -538,9 +542,9 @@ def _get_handover_payload(kind, obj_id, token):
         return None
     return cache.get(_handover_cache_key(kind, obj_id, token))
 
-ADMIN_ROLE_LIST = ['admin', 'headteacher', 'deputy', 'dos']
+ADMIN_ROLE_LIST = ['admin', 'director', 'headteacher', 'deputy', 'dos']
 ADMIN_ROLES = set(ADMIN_ROLE_LIST)
-PASSWORD_ADMIN_ROLES = {'superadmin', 'headteacher', 'dos'}
+PASSWORD_ADMIN_ROLES = {'superadmin', 'director', 'headteacher', 'dos'}
 
 def is_admin_role(role: Optional[str]) -> bool:
     return bool(role) and role in ADMIN_ROLES
@@ -1908,10 +1912,107 @@ def has_report_card_permission(user):
 def has_grading_permission(user):
     try:
         r = user.profile.role
-        # Only DOS + Super Admin should manage grading scales.
-        return user.is_superuser or r in ['superadmin', 'dos']
+        return user.is_superuser or r in ['superadmin', 'director', 'headteacher', 'dos']
     except UserProfile.DoesNotExist:
         return user.is_superuser
+
+
+def has_assessment_policy_permission(user):
+    try:
+        r = user.profile.role
+        return user.is_superuser or r in ['superadmin', 'director', 'headteacher', 'dos']
+    except UserProfile.DoesNotExist:
+        return user.is_superuser
+
+
+def _default_assessment_config():
+    return {
+        'selected_exam_type_ids': [],
+        'weights': {},
+        'promotion_threshold': 50,
+        'remark_mode': 'grade_band',
+    }
+
+
+def _normalize_assessment_config(term, config):
+    raw = config if isinstance(config, dict) else {}
+    out = _default_assessment_config()
+    exam_ids_raw = raw.get('selected_exam_type_ids') or []
+    selected_ids = []
+    if isinstance(exam_ids_raw, list):
+        for item in exam_ids_raw:
+            try:
+                selected_ids.append(int(item))
+            except Exception:
+                continue
+    selected_ids = list(dict.fromkeys(selected_ids))
+
+    qs = ExamType.objects.filter(id__in=selected_ids, is_active=True)
+    valid_ids = list(qs.values_list('id', flat=True))
+    valid_id_set = set(valid_ids)
+
+    weights_raw = raw.get('weights') or {}
+    weights = {}
+    if isinstance(weights_raw, dict):
+        for key, value in weights_raw.items():
+            try:
+                exam_id = int(key)
+                weight_value = float(value)
+            except Exception:
+                continue
+            if exam_id in valid_id_set and weight_value >= 0:
+                weights[str(exam_id)] = round(weight_value, 2)
+
+    if not valid_ids:
+        fallback = list(ExamType.objects.filter(is_active=True, exam_type__in=['midterm', 'endterm']).values_list('id', flat=True)[:2])
+        if not fallback:
+            fallback = list(ExamType.objects.filter(is_active=True).values_list('id', flat=True)[:3])
+        valid_ids = fallback
+        valid_id_set = set(valid_ids)
+        if len(valid_ids) == 2:
+            weights = {str(valid_ids[0]): 50.0, str(valid_ids[1]): 50.0}
+        elif len(valid_ids) == 3:
+            weights = {str(valid_ids[0]): 20.0, str(valid_ids[1]): 30.0, str(valid_ids[2]): 50.0}
+        elif len(valid_ids) == 1:
+            weights = {str(valid_ids[0]): 100.0}
+
+    if valid_ids:
+        missing = [exam_id for exam_id in valid_ids if str(exam_id) not in weights]
+        if missing:
+            remaining = max(0.0, 100.0 - sum(weights.values()))
+            even_share = round((remaining / len(missing)) if missing else 0.0, 2)
+            for exam_id in missing:
+                weights[str(exam_id)] = even_share
+        total_weight = sum(weights.values())
+        if total_weight <= 0:
+            even_share = round(100.0 / len(valid_ids), 2)
+            weights = {str(exam_id): even_share for exam_id in valid_ids}
+            total_weight = sum(weights.values())
+        if total_weight and abs(total_weight - 100.0) > 0.01:
+            factor = 100.0 / total_weight
+            weights = {key: round(val * factor, 2) for key, val in weights.items()}
+            total_weight = sum(weights.values())
+            if valid_ids and abs(total_weight - 100.0) > 0.01:
+                first_key = str(valid_ids[0])
+                weights[first_key] = round(weights[first_key] + (100.0 - total_weight), 2)
+
+    try:
+        threshold = int(raw.get('promotion_threshold', 50))
+    except Exception:
+        threshold = 50
+    threshold = max(0, min(100, threshold))
+
+    remark_mode = str(raw.get('remark_mode') or 'grade_band').strip().lower()
+    if remark_mode not in ['grade_band', 'average']:
+        remark_mode = 'grade_band'
+
+    out.update({
+        'selected_exam_type_ids': valid_ids,
+        'weights': weights,
+        'promotion_threshold': threshold,
+        'remark_mode': remark_mode,
+    })
+    return out
 
 class SchoolClassViewSet(viewsets.ModelViewSet):
     queryset = SchoolClass.objects.all()
@@ -3349,6 +3450,7 @@ class MarkViewSet(viewsets.ModelViewSet):
         term_q = (self.request.query_params.get('term') or '').strip()
         subj_q = (self.request.query_params.get('subject') or '').strip()
         student_q = (self.request.query_params.get('student') or '').strip()
+        exam_type_q = (self.request.query_params.get('exam_type') or '').strip()
         if year_q.isdigit():
             qs = qs.filter(year=int(year_q))
         if term_q.isdigit():
@@ -3357,6 +3459,8 @@ class MarkViewSet(viewsets.ModelViewSet):
             qs = qs.filter(subject__iexact=subj_q)
         if student_q.isdigit():
             qs = qs.filter(student_id=int(student_q))
+        if exam_type_q.isdigit():
+            qs = qs.filter(exam_type_id=int(exam_type_q))
 
         if role == 'teacher':
             try:
@@ -3393,9 +3497,15 @@ class MarkViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
+            exam_type = serializer.validated_data.get('exam_type')
+            if exam_type and not getattr(exam_type, 'is_active', False):
+                raise DRFValidationError({'exam_type': 'Selected exam type is inactive.'})
             serializer.save(teacher=teacher)
             return
 
+        exam_type = serializer.validated_data.get('exam_type')
+        if exam_type and not getattr(exam_type, 'is_active', False):
+            raise DRFValidationError({'exam_type': 'Selected exam type is inactive.'})
         serializer.save()
 
     @action(detail=False, methods=['post'], url_path='bulk-upsert', permission_classes=[permissions.IsAuthenticated])
@@ -3418,6 +3528,7 @@ class MarkViewSet(viewsets.ModelViewSet):
         year = data.get('year')
         term = data.get('term')
         subject = (data.get('subject') or '').strip()
+        exam_type_id = data.get('exam_type')
         items = data.get('items') or []
         if not (str(year).isdigit() and str(term).isdigit() and subject and isinstance(items, list)):
             return Response({'detail': 'year, term, subject, and items[] are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -3429,6 +3540,14 @@ class MarkViewSet(viewsets.ModelViewSet):
 
         if AcademicTerm.objects.filter(academic_year=year, term_number=term, marks_locked=True).exists():
             return Response({'detail': f'Marks are locked for Term {term} - {year}.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        exam_type = None
+        if str(exam_type_id).strip():
+            if not str(exam_type_id).isdigit():
+                return Response({'detail': 'exam_type must be a valid exam type id.'}, status=status.HTTP_400_BAD_REQUEST)
+            exam_type = ExamType.objects.filter(id=int(exam_type_id), is_active=True).first()
+            if exam_type is None:
+                return Response({'detail': 'Selected exam type was not found or is inactive.'}, status=status.HTTP_400_BAD_REQUEST)
 
         teacher = None
         lvl = sec = None
@@ -3463,6 +3582,10 @@ class MarkViewSet(viewsets.ModelViewSet):
 
                 # Upsert by teacher+student+subject+term+year (delete dupes if any).
                 base_q = Mark.objects.filter(student_id=sid, subject__iexact=subject, term=term, year=year)
+                if exam_type is None:
+                    base_q = base_q.filter(exam_type__isnull=True)
+                else:
+                    base_q = base_q.filter(exam_type=exam_type)
                 if teacher is not None:
                     base_q = base_q.filter(teacher=teacher)
                 existing = list(base_q.order_by('id')[:5])
@@ -3470,9 +3593,10 @@ class MarkViewSet(viewsets.ModelViewSet):
                     m = existing[0]
                     m.score = score
                     m.remarks = remarks
+                    m.exam_type = exam_type
                     if teacher is not None and m.teacher_id is None:
                         m.teacher = teacher
-                    m.save(update_fields=['score', 'remarks', 'teacher'])
+                    m.save(update_fields=['score', 'remarks', 'exam_type', 'teacher'])
                     if len(existing) > 1:
                         Mark.objects.filter(id__in=[x.id for x in existing[1:]]).delete()
                 else:
@@ -3482,6 +3606,7 @@ class MarkViewSet(viewsets.ModelViewSet):
                         score=score,
                         term=term,
                         year=year,
+                        exam_type=exam_type,
                         teacher=teacher,
                         remarks=remarks,
                     )
@@ -3491,7 +3616,7 @@ class MarkViewSet(viewsets.ModelViewSet):
             user=request.user,
             event_type='MARKS_BULK_UPSERT',
             ip_address=get_client_ip(request),
-            details=f'Bulk upsert marks subject={subject} term={term}/{year} items={len(items)} saved={saved}.',
+            details=f'Bulk upsert marks subject={subject} exam_type={getattr(exam_type, "name", "term-average")} term={term}/{year} items={len(items)} saved={saved}.',
         )
         return Response({'saved': saved})
 
@@ -4883,6 +5008,9 @@ class AuthViewSet(viewsets.ViewSet):
 class PromotionViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated, CanManagePromotions]
 
+    def _report_helper(self):
+        return ReportCardViewSet()
+
     @action(detail=False, methods=['get'], url_path=r'students-for-promotion/(?P<class_id>\d+)/(?P<section>[^/.]+)')
     def list_students_for_promotion(self, request, class_id, section):
         try:
@@ -4895,20 +5023,18 @@ class PromotionViewSet(viewsets.ViewSet):
             return Response({'detail': 'No active academic term found.'}, status=status.HTTP_400_BAD_REQUEST)
 
         students = Student.objects.filter(current_class=school_class, section=section, status='active')
+        helper = self._report_helper()
+        assessment_config = _normalize_assessment_config(current_academic_term, getattr(current_academic_term, 'assessment_config', None) or {})
+        threshold = float(assessment_config.get('promotion_threshold', 50))
 
         results = []
         for student in students:
-            # Calculate term average
-            # Assuming marks are for the current academic year and term
-            marks = Mark.objects.filter(student=student, year=current_academic_term.academic_year, term=current_academic_term.term_number)
-            if marks.exists():
-                average_score = marks.aggregate(Avg('score'))['score__avg']
-            else:
-                average_score = 0
+            term_average = helper._term_average_for_student(student, current_academic_term.academic_year, current_academic_term.term_number) or 0
+            yearly_average, yearly_term_breakdown = helper._yearly_average_for_student(student, current_academic_term.academic_year)
+            decision_basis = yearly_average if current_academic_term.term_number == 3 and yearly_average is not None else term_average
 
-            # Determine suggested decision
             suggested_decision = 'repeat_year'
-            if average_score >= 50:
+            if decision_basis >= threshold:
                 if school_class.level == 'P.7':
                     suggested_decision = 'graduate'
                 else:
@@ -4919,7 +5045,10 @@ class PromotionViewSet(viewsets.ViewSet):
                 'first_name': student.first_name,
                 'last_name': student.last_name,
                 'student_system_id': student.student_id,
-                'term_average': round(average_score, 2),
+                'term_average': round(term_average, 2),
+                'yearly_average': yearly_average,
+                'yearly_term_breakdown': yearly_term_breakdown,
+                'promotion_basis': 'yearly_average' if current_academic_term.term_number == 3 else 'term_average',
                 'suggested_decision': suggested_decision,
                 'current_class_level': school_class.level,
                 'current_section': section,
@@ -4948,17 +5077,18 @@ class PromotionViewSet(viewsets.ViewSet):
             return Response({'detail': 'No active academic term found.'}, status=status.HTTP_400_BAD_REQUEST)
 
         students = Student.objects.filter(current_class=school_class, section=section, status='active')
+        helper = self._report_helper()
+        assessment_config = _normalize_assessment_config(current_academic_term, getattr(current_academic_term, 'assessment_config', None) or {})
+        threshold = float(assessment_config.get('promotion_threshold', 50))
 
         promotion_suggestions = []
         for student in students:
-            marks = Mark.objects.filter(student=student, year=current_academic_term.academic_year, term=current_academic_term.term_number)
-            if marks.exists():
-                average_score = marks.aggregate(Avg('score'))['score__avg']
-            else:
-                average_score = 0
+            term_average = helper._term_average_for_student(student, current_academic_term.academic_year, current_academic_term.term_number) or 0
+            yearly_average, yearly_term_breakdown = helper._yearly_average_for_student(student, current_academic_term.academic_year)
+            decision_basis = yearly_average if current_academic_term.term_number == 3 and yearly_average is not None else term_average
 
             decision = 'repeat_year'
-            if average_score >= 50:
+            if decision_basis >= threshold:
                 if school_class.level == 'P.7':
                     decision = 'graduate'
                 else:
@@ -4967,7 +5097,10 @@ class PromotionViewSet(viewsets.ViewSet):
             promotion_suggestions.append({
                 'student_id': student.id,
                 'decision': decision,
-                'term_average': round(average_score, 2),
+                'term_average': round(term_average, 2),
+                'yearly_average': yearly_average,
+                'yearly_term_breakdown': yearly_term_breakdown,
+                'promotion_basis': 'yearly_average' if current_academic_term.term_number == 3 else 'term_average',
                 'notes': student.promotion_notes,
             })
         return Response(promotion_suggestions)
@@ -5124,6 +5257,7 @@ class AcademicTermViewSet(viewsets.ViewSet):
         auto_generate_invoices = request.data.get('auto_generate_invoices', False)
         sms_parents = request.data.get('sms_parents', False)
         open_mark_entry = request.data.get('open_mark_entry', False)
+        assessment_config = request.data.get('assessment_config', {})
 
         if not all([academic_year, term_number, start_date_str, end_date_str]):
             return Response({'detail': 'Missing required term details.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -5200,6 +5334,7 @@ class AcademicTermViewSet(viewsets.ViewSet):
             term_number=term_number,
             start_date=start_date,
             end_date=end_date,
+            assessment_config=_normalize_assessment_config(None, assessment_config),
             holiday_break_days=holiday_break_days,
             auto_generate_invoices_on_start=auto_generate_invoices,
             sms_parents_on_start=sms_parents,
@@ -5298,6 +5433,8 @@ class AcademicTermViewSet(viewsets.ViewSet):
         for f in ['holiday_break_days', 'auto_generate_invoices_on_start', 'sms_parents_on_start', 'open_mark_entry_on_start']:
             if f in data:
                 setattr(term, f, data.get(f))
+        if 'assessment_config' in data:
+            term.assessment_config = _normalize_assessment_config(term, data.get('assessment_config'))
 
         try:
             term.holiday_break_days = max(0, int(term.holiday_break_days or 0))
@@ -5318,6 +5455,25 @@ class AcademicTermViewSet(viewsets.ViewSet):
             details=f'Edited term id={term.id} year={term.academic_year} term={term.term_number}.',
         )
         return Response(AcademicTermSerializer(term).data)
+
+    @action(detail=True, methods=['post'], url_path='configure-assessment')
+    def configure_assessment(self, request, pk=None):
+        try:
+            term = AcademicTerm.objects.get(pk=pk)
+        except AcademicTerm.DoesNotExist:
+            return Response({'detail': 'Term not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if not has_assessment_policy_permission(request.user):
+            return Response({'detail': 'Only Super Admin, Director, Head Teacher, and DOS can configure term assessments.'}, status=status.HTTP_403_FORBIDDEN)
+
+        term.assessment_config = _normalize_assessment_config(term, (request.data or {}).get('assessment_config'))
+        term.save(update_fields=['assessment_config'])
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='TERM_ASSESSMENT_CONFIGURED',
+            ip_address=get_client_ip(request),
+            details=f'Configured assessment policy for term id={term.id} year={term.academic_year} term={term.term_number}.',
+        )
+        return Response(AcademicTermSerializer(term).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='calendar')
     def calendar(self, request, pk=None):
@@ -5420,6 +5576,23 @@ class AcademicTermViewSet(viewsets.ViewSet):
 class ReportCardViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated, CanManageReportCards]
 
+    def _term_assessment_config(self, academic_year, term_number):
+        term = AcademicTerm.objects.filter(academic_year=academic_year, term_number=term_number).first()
+        config = _normalize_assessment_config(term, getattr(term, 'assessment_config', None) or {})
+        exam_types = list(ExamType.objects.filter(id__in=config['selected_exam_type_ids']))
+        exam_type_map = {exam.id: exam for exam in exam_types}
+        config['selected_exam_types'] = [
+            {
+                'id': exam.id,
+                'name': exam.name,
+                'exam_type': exam.exam_type,
+                'weight': config['weights'].get(str(exam.id)),
+            }
+            for exam in sorted(exam_types, key=lambda item: config['selected_exam_type_ids'].index(item.id))
+        ]
+        config['exam_type_map'] = exam_type_map
+        return config
+
     def _grade_for_score(self, score: float, grading_scale_data: list[dict]):
         """
         Returns (grade, points) for a 0-100 score.
@@ -5446,6 +5619,273 @@ class ReportCardViewSet(viewsets.ViewSet):
                     points = None
                 break
         return grade, points
+
+    def _remark_for_score(self, score: float, grading_scale_data: list[dict], *, mode='grade_band'):
+        selected_grade = None
+        selected_remark = None
+        try:
+            s = float(score or 0)
+        except Exception:
+            s = 0.0
+        for gs in (grading_scale_data or []):
+            try:
+                mn = float(gs.get('min_score'))
+                mx = float(gs.get('max_score'))
+            except Exception:
+                continue
+            if mn <= s <= mx:
+                selected_grade = str(gs.get('grade') or 'N/A')
+                selected_remark = str(gs.get('remark') or gs.get('remarks') or gs.get('implication') or '').strip() or None
+                break
+        if selected_remark and mode == 'grade_band':
+            return selected_remark
+        if s >= 85:
+            return 'Excellent performance'
+        if s >= 70:
+            return 'Very good performance'
+        if s >= 60:
+            return 'Good progress'
+        if s >= 50:
+            return 'Fair performance'
+        if s >= 40:
+            return 'Needs more support'
+        return 'Below expectation'
+
+    def _grading_scale_for_student(self, student):
+        grading_scale = GradingScale.objects.filter(school_class=student.current_class, is_default=False).first()
+        if not grading_scale:
+            grading_scale = GradingScale.objects.filter(is_default=True).first()
+        return grading_scale.scale_data if grading_scale else []
+
+    def _group_student_term_marks(self, student, term_number, academic_year):
+        marks = list(
+            Mark.objects.filter(student=student, term=term_number, year=academic_year)
+            .select_related('exam_type')
+            .order_by('subject', 'exam_type__name', 'id')
+        )
+        assessment_config = self._term_assessment_config(academic_year, term_number)
+        selected_ids = [int(x) for x in assessment_config.get('selected_exam_type_ids', [])]
+        selected_set = set(selected_ids)
+        weight_map = assessment_config.get('weights', {})
+        grouped = {}
+        for mark in marks:
+            subject_key = str(getattr(mark, 'subject', '') or '').strip()
+            if not subject_key:
+                continue
+            bucket = grouped.setdefault(subject_key, {
+                'subject': subject_key,
+                'scores': [],
+                'exam_types': [],
+                'remarks': [],
+                'weighted_total': 0.0,
+                'weight_used': 0.0,
+            })
+            score = float(getattr(mark, 'score', 0) or 0)
+            bucket['scores'].append(score)
+            exam_name = getattr(getattr(mark, 'exam_type', None), 'name', None) or 'Term entry'
+            bucket['exam_types'].append(exam_name)
+            exam_id = getattr(mark, 'exam_type_id', None)
+            if exam_id and exam_id in selected_set:
+                try:
+                    weight = float(weight_map.get(str(int(exam_id)), 0))
+                except Exception:
+                    weight = 0.0
+                bucket['weighted_total'] += (score * weight)
+                bucket['weight_used'] += weight
+            remark = str(getattr(mark, 'remarks', '') or '').strip()
+            if remark:
+                bucket['remarks'].append(remark)
+
+        rows = []
+        for _, bucket in sorted(grouped.items(), key=lambda item: item[0].lower()):
+            if bucket['weight_used'] > 0:
+                avg_score = round(bucket['weighted_total'] / bucket['weight_used'], 2)
+            else:
+                avg_score = round(sum(bucket['scores']) / len(bucket['scores']), 2) if bucket['scores'] else 0.0
+            rows.append({
+                'subject': bucket['subject'],
+                'score': avg_score,
+                'exam_count': len(bucket['scores']),
+                'exam_types': bucket['exam_types'],
+                'remarks': ' | '.join(bucket['remarks'][:3]),
+            })
+        return marks, rows, assessment_config
+
+    def _subject_analytics(self, subject_rows, grading_scale_data, *, remark_mode='grade_band'):
+        enriched = []
+        total_points = 0
+        points_known = False
+        for row in subject_rows:
+            grade, pts = self._grade_for_score(row['score'], grading_scale_data)
+            if pts is not None:
+                points_known = True
+                total_points += int(pts)
+            enriched.append({
+                'subject': row['subject'],
+                'score': float(row['score']),
+                'max_score': 100,
+                'percentage': float(row['score']),
+                'grade': grade,
+                'points': pts,
+                'remarks': row.get('remarks') or self._remark_for_score(float(row['score']), grading_scale_data, mode=remark_mode),
+                'exam_count': int(row.get('exam_count') or 0),
+                'exam_types': row.get('exam_types') or [],
+            })
+        return enriched, (int(total_points) if points_known else None)
+
+    def _term_average_for_student(self, student, academic_year, term_number):
+        _, rows, _ = self._group_student_term_marks(student, term_number, academic_year)
+        if not rows:
+            return None
+        return round(sum(row['score'] for row in rows) / len(rows), 2)
+
+    def _yearly_average_for_student(self, student, academic_year):
+        averages = []
+        term_breakdown = []
+        for term_number in [1, 2, 3]:
+            avg = self._term_average_for_student(student, academic_year, term_number)
+            term_breakdown.append({'term_number': term_number, 'average': avg})
+            if avg is not None:
+                averages.append(avg)
+        yearly_average = round(sum(averages) / len(averages), 2) if averages else None
+        return yearly_average, term_breakdown
+
+    def _attendance_impact_label(self, attendance_percentage):
+        pct = float(attendance_percentage or 0)
+        if pct >= 90:
+            return 'Strong attendance support'
+        if pct >= 75:
+            return 'Attendance is acceptable'
+        if pct >= 60:
+            return 'Attendance may be affecting performance'
+        return 'Low attendance is a risk factor'
+
+    def _class_position_for_student(self, student, term_number, academic_year):
+        peers = Student.objects.filter(current_class=student.current_class, section=student.section, status='active')
+        ranked = []
+        for peer in peers:
+            _, rows, _ = self._group_student_term_marks(peer, term_number, academic_year)
+            if not rows:
+                continue
+            avg = sum(r['score'] for r in rows) / len(rows)
+            ranked.append({'student_id': peer.id, 'avg_score': avg})
+        ranked.sort(key=lambda item: item['avg_score'], reverse=True)
+        for idx, row in enumerate(ranked, start=1):
+            if row['student_id'] == student.id:
+                return idx
+        return 0
+
+    def _attendance_percentage(self, student, academic_term):
+        total_school_days = 100
+        days_present = Attendance.objects.filter(
+            student=student,
+            date__range=(academic_term.start_date, academic_term.end_date),
+            status__iexact='present',
+        ).count()
+        return (days_present / total_school_days) * 100 if total_school_days > 0 else 0
+
+    def _strengths_and_weaknesses(self, enriched_rows):
+        ordered = sorted(enriched_rows, key=lambda row: row['score'], reverse=True)
+        strengths = [
+            {'subject': row['subject'], 'score': row['score'], 'grade': row['grade']}
+            for row in ordered[:3]
+        ]
+        weaknesses = [
+            {'subject': row['subject'], 'score': row['score'], 'grade': row['grade']}
+            for row in sorted(enriched_rows, key=lambda row: row['score'])[:3]
+        ]
+        return strengths, weaknesses
+
+    def _class_level_analytics(self, school_class, term_number, academic_year, *, section=None):
+        students = Student.objects.filter(current_class=school_class, status='active')
+        if section:
+            students = students.filter(section=section)
+        try:
+            academic_term = AcademicTerm.objects.get(term_number=term_number, academic_year=academic_year)
+        except AcademicTerm.DoesNotExist:
+            academic_term = None
+
+        assessment_config = self._term_assessment_config(academic_year, term_number)
+        threshold = float(assessment_config.get('promotion_threshold', 50) or 50)
+        previous_term = int(term_number) - 1 if int(term_number) > 1 else None
+        subject_buckets = {}
+        student_rows = []
+        for student in students:
+            _, subject_rows, _ = self._group_student_term_marks(student, term_number, academic_year)
+            if not subject_rows:
+                continue
+            term_average = round(sum(row['score'] for row in subject_rows) / len(subject_rows), 2)
+            previous_average = self._term_average_for_student(student, academic_year, previous_term) if previous_term else None
+            trend_delta = round(term_average - float(previous_average or 0), 2) if previous_average is not None else None
+            attendance_percentage = self._attendance_percentage(student, academic_term) if academic_term else 0
+            student_rows.append({
+                'student_id': student.id,
+                'student_name': f"{student.first_name} {student.last_name}".strip(),
+                'student_system_id': student.student_id,
+                'section': student.section,
+                'term_average': term_average,
+                'previous_term_average': previous_average,
+                'trend_delta': trend_delta,
+                'attendance_percentage': round(float(attendance_percentage or 0), 2),
+                'attendance_impact': self._attendance_impact_label(attendance_percentage),
+            })
+            for row in subject_rows:
+                bucket = subject_buckets.setdefault(row['subject'], [])
+                bucket.append(float(row['score'] or 0))
+
+        class_average = round(sum(row['term_average'] for row in student_rows) / len(student_rows), 2) if student_rows else 0
+        ranked_students = sorted(student_rows, key=lambda row: row['term_average'], reverse=True)
+        for idx, row in enumerate(ranked_students, start=1):
+            row['class_position'] = idx
+
+        top_improvers = [
+            row for row in sorted(
+                [item for item in ranked_students if item['trend_delta'] is not None],
+                key=lambda item: item['trend_delta'],
+                reverse=True,
+            )[:5]
+        ]
+        at_risk_students = []
+        for row in sorted(ranked_students, key=lambda item: item['term_average']):
+            risk_reasons = []
+            if row['term_average'] < threshold:
+                risk_reasons.append('Below promotion threshold')
+            if row['attendance_percentage'] < 75:
+                risk_reasons.append('Attendance concern')
+            if risk_reasons:
+                at_risk_students.append({**row, 'risk_reasons': risk_reasons})
+        subject_heatmap = []
+        for subject, scores in sorted(subject_buckets.items(), key=lambda item: item[0].lower()):
+            if not scores:
+                continue
+            avg_score = round(sum(scores) / len(scores), 2)
+            pass_rate = round((sum(1 for score in scores if score >= threshold) / len(scores)) * 100, 2)
+            subject_heatmap.append({
+                'subject': subject,
+                'average_score': avg_score,
+                'highest_score': round(max(scores), 2),
+                'lowest_score': round(min(scores), 2),
+                'pass_rate': pass_rate,
+                'performance_band': self._attendance_impact_label(avg_score),
+            })
+
+        strongest_subject = max(subject_heatmap, key=lambda item: item['average_score']) if subject_heatmap else None
+        weakest_subject = min(subject_heatmap, key=lambda item: item['average_score']) if subject_heatmap else None
+        return {
+            'class_id': school_class.id,
+            'class_level': school_class.level,
+            'section': section,
+            'term_number': int(term_number),
+            'academic_year': int(academic_year),
+            'students_with_results': len(ranked_students),
+            'class_average': class_average,
+            'promotion_threshold': threshold,
+            'top_improvers': top_improvers,
+            'at_risk_students': at_risk_students[:8],
+            'subject_heatmap': subject_heatmap,
+            'strongest_subject': strongest_subject,
+            'weakest_subject': weakest_subject,
+        }
 
     @action(detail=False, methods=['get'], url_path=r'generate/(?P<student_id>\d+)/(?P<term_number>\d+)/(?P<academic_year>\d+)')
     def generate_single_report_card(self, request, student_id, term_number, academic_year):
@@ -5482,55 +5922,16 @@ class ReportCardViewSet(viewsets.ViewSet):
                 return Response({'detail': msg}, status=status.HTTP_403_FORBIDDEN)
             
 
-        marks = Mark.objects.filter(student=student, term=term_number, year=academic_year)
-        if not marks.exists():
+        raw_marks, subject_rows, assessment_config = self._group_student_term_marks(student, term_number, academic_year)
+        if not raw_marks:
             return Response({'detail': 'No marks found for this student in the specified term.'}, status=status.HTTP_404_NOT_FOUND)
 
-        overall_average = marks.aggregate(Avg('score'))['score__avg'] or 0
-
-        # Simplified class position - real implementation would involve all students in the class
-        all_class_marks = Mark.objects.filter(student__current_class=student.current_class, student__section=student.section, term=term_number, year=academic_year)
-        students_with_averages = all_class_marks.values('student').annotate(avg_score=Avg('score'))
-        sorted_students = sorted(list(students_with_averages), key=lambda x: x['avg_score'], reverse=True)
-        class_position = 0
-        for i, s in enumerate(sorted_students):
-            if s['student'] == student.id:
-                class_position = i + 1
-                break
-
-        # Attendance Percentage (simplified)
-        total_school_days = 100 # Placeholder, retrieve from AcademicTerm or configuration
-        days_present = Attendance.objects.filter(student=student, date__range=(academic_term.start_date, academic_term.end_date), status='Present').count()
-        attendance_percentage = (days_present / total_school_days) * 100 if total_school_days > 0 else 0
-
-        # Get grading scale
-        grading_scale = GradingScale.objects.filter(school_class=student.current_class, is_default=False).first()
-        if not grading_scale:
-            grading_scale = GradingScale.objects.filter(is_default=True).first()
-        
-        grading_scale_data = grading_scale.scale_data if grading_scale else []
-
-        marks_rows = []
-        total_points = 0
-        points_known = False
-        for m in marks:
-            score = float(getattr(m, 'score', 0) or 0)
-            grade, pts = self._grade_for_score(score, grading_scale_data)
-            if pts is not None:
-                points_known = True
-                total_points += int(pts)
-            marks_rows.append({
-                'subject': getattr(m, 'subject', '') or '',
-                'score': score,
-                'max_score': 100,
-                'percentage': score,
-                'grade': grade,
-                'points': pts,
-                'remarks': getattr(m, 'remarks', None) or '',
-            })
-
+        overall_average = (sum(row['score'] for row in subject_rows) / len(subject_rows)) if subject_rows else 0
+        class_position = self._class_position_for_student(student, term_number, academic_year)
+        attendance_percentage = self._attendance_percentage(student, academic_term)
+        grading_scale_data = self._grading_scale_for_student(student)
+        marks_rows, aggregate_points = self._subject_analytics(subject_rows, grading_scale_data, remark_mode=assessment_config.get('remark_mode', 'grade_band'))
         overall_grade, _ = self._grade_for_score(float(overall_average or 0), grading_scale_data)
-        aggregate_points = int(total_points) if points_known else None
 
         pdf_buffer = generate_report_card_pdf(
             student=student,
@@ -5572,23 +5973,21 @@ class ReportCardViewSet(viewsets.ViewSet):
             if (request.user.username or '').strip() != student.student_id:
                 return Response({'detail': "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
 
-        marks = Mark.objects.filter(student=student, term=term_number, year=academic_year)
-        if not marks.exists():
+        raw_marks, subject_rows, assessment_config = self._group_student_term_marks(student, term_number, academic_year)
+        if not raw_marks:
             return Response({'detail': 'No marks found for this student in the specified term.'}, status=status.HTTP_404_NOT_FOUND)
 
-        overall_average = marks.aggregate(Avg('score'))['score__avg'] or 0
-        all_class_marks = Mark.objects.filter(student__current_class=student.current_class, student__section=student.section, term=term_number, year=academic_year)
-        students_with_averages = all_class_marks.values('student').annotate(avg_score=Avg('score'))
-        sorted_students = sorted(list(students_with_averages), key=lambda x: x['avg_score'], reverse=True)
-        class_position = 0
-        for i, s in enumerate(sorted_students):
-            if s['student'] == student.id:
-                class_position = i + 1
-                break
-
-        total_school_days = 100
-        days_present = Attendance.objects.filter(student=student, date__range=(academic_term.start_date, academic_term.end_date), status='Present').count()
-        attendance_percentage = (days_present / total_school_days) * 100 if total_school_days > 0 else 0
+        grading_scale_data = self._grading_scale_for_student(student)
+        marks_rows, aggregate_points = self._subject_analytics(subject_rows, grading_scale_data, remark_mode=assessment_config.get('remark_mode', 'grade_band'))
+        overall_average = (sum(row['score'] for row in subject_rows) / len(subject_rows)) if subject_rows else 0
+        overall_grade, _ = self._grade_for_score(float(overall_average or 0), grading_scale_data)
+        class_position = self._class_position_for_student(student, term_number, academic_year)
+        attendance_percentage = self._attendance_percentage(student, academic_term)
+        strengths, weaknesses = self._strengths_and_weaknesses(marks_rows)
+        yearly_average, yearly_term_breakdown = self._yearly_average_for_student(student, int(academic_year))
+        previous_term = int(term_number) - 1 if int(term_number) > 1 else None
+        previous_term_average = self._term_average_for_student(student, int(academic_year), previous_term) if previous_term else None
+        trend_delta = round(float(overall_average or 0) - float(previous_term_average or 0), 2) if previous_term_average is not None else None
 
         inv = Invoice.objects.filter(student=student, academic_year=academic_year, term_number=term_number).first()
         held = bool(inv and getattr(inv, 'results_blocked', False)) if role in ['parent', 'student'] else False
@@ -5599,12 +5998,46 @@ class ReportCardViewSet(viewsets.ViewSet):
             'academic_year': int(academic_year),
             'term_number': int(term_number),
             'overall_average': float(overall_average or 0),
+            'overall_grade': overall_grade,
+            'aggregate_points': aggregate_points,
             'class_position': class_position,
             'attendance_percentage': float(attendance_percentage or 0),
-            'subjects_count': marks.count(),
+            'subjects_count': len(subject_rows),
+            'exam_entries_count': len(raw_marks),
+            'strengths': strengths,
+            'weaknesses': weaknesses,
+            'subject_breakdown': marks_rows,
+            'automatic_remark': self._remark_for_score(float(overall_average or 0), grading_scale_data, mode=assessment_config.get('remark_mode', 'grade_band')),
+            'trend_from_previous_term': {
+                'previous_term_number': previous_term,
+                'previous_term_average': previous_term_average,
+                'delta': trend_delta,
+            },
+            'attendance_impact': self._attendance_impact_label(attendance_percentage),
+            'yearly_average': yearly_average,
+            'yearly_term_breakdown': yearly_term_breakdown,
+            'assessment_config': {
+                'selected_exam_types': assessment_config.get('selected_exam_types', []),
+                'promotion_threshold': assessment_config.get('promotion_threshold', 50),
+                'remark_mode': assessment_config.get('remark_mode', 'grade_band'),
+            },
             'results_blocked': held,
             'results_block_reason': (inv.results_block_reason if inv else None),
         }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path=r'class-analytics/(?P<class_id>\d+)/(?P<term_number>\d+)/(?P<academic_year>\d+)')
+    def class_analytics(self, request, class_id, term_number, academic_year):
+        try:
+            school_class = SchoolClass.objects.get(id=class_id)
+            AcademicTerm.objects.get(term_number=term_number, academic_year=academic_year)
+        except SchoolClass.DoesNotExist:
+            return Response({'detail': 'Class not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except AcademicTerm.DoesNotExist:
+            return Response({'detail': 'Academic term not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        section = str(request.query_params.get('section') or '').strip().upper() or None
+        data = self._class_level_analytics(school_class, int(term_number), int(academic_year), section=section)
+        return Response(data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='email-all-parents')
     def email_all_parents(self, request):
@@ -5628,50 +6061,14 @@ class ReportCardViewSet(viewsets.ViewSet):
         for student in students_in_class:
             parent_profile = UserProfile.objects.filter(user__first_name=student.parent_name, role='parent').first() # Simplified lookup
             if parent_profile and parent_profile.email_address:
-                marks = Mark.objects.filter(student=student, term=term_number, year=academic_year)
-                if marks.exists():
-                    marks_data = MarkSerializer(marks, many=True).data
-                    overall_average = marks.aggregate(Avg('score'))['score__avg'] or 0
-                    
-                    all_class_marks = Mark.objects.filter(student__current_class=student.current_class, student__section=student.section, term=term_number, year=academic_year)
-                    students_with_averages = all_class_marks.values('student').annotate(avg_score=Avg('score'))
-                    sorted_students = sorted(list(students_with_averages), key=lambda x: x['avg_score'], reverse=True)
-                    class_position = 0
-                    for i, s in enumerate(sorted_students):
-                        if s['student'] == student.id:
-                            class_position = i + 1
-                            break
-
-                    total_school_days = 100 
-                    days_present = Attendance.objects.filter(student=student, date__range=(academic_term.start_date, academic_term.end_date), status='Present').count()
-                    attendance_percentage = (days_present / total_school_days) * 100 if total_school_days > 0 else 0
-
-                    grading_scale = GradingScale.objects.filter(school_class=student.current_class, is_default=False).first() 
-                    if not grading_scale: 
-                        grading_scale = GradingScale.objects.filter(is_default=True).first() 
-                    grading_scale_data = grading_scale.scale_data if grading_scale else [] 
- 
-                    marks_rows = [] 
-                    total_points = 0 
-                    points_known = False 
-                    for m in marks: 
-                        score = float(getattr(m, 'score', 0) or 0) 
-                        grade, pts = self._grade_for_score(score, grading_scale_data) 
-                        if pts is not None: 
-                            points_known = True 
-                            total_points += int(pts) 
-                        marks_rows.append({ 
-                            'subject': getattr(m, 'subject', '') or '', 
-                            'score': score, 
-                            'max_score': 100, 
-                            'percentage': score, 
-                            'grade': grade, 
-                            'points': pts, 
-                            'remarks': getattr(m, 'remarks', None) or '', 
-                        }) 
- 
-                    overall_grade, _ = self._grade_for_score(float(overall_average or 0), grading_scale_data) 
-                    aggregate_points = int(total_points) if points_known else None 
+                raw_marks, subject_rows, assessment_config = self._group_student_term_marks(student, term_number, academic_year)
+                if raw_marks:
+                    overall_average = (sum(row['score'] for row in subject_rows) / len(subject_rows)) if subject_rows else 0
+                    class_position = self._class_position_for_student(student, term_number, academic_year)
+                    attendance_percentage = self._attendance_percentage(student, academic_term)
+                    grading_scale_data = self._grading_scale_for_student(student)
+                    marks_rows, aggregate_points = self._subject_analytics(subject_rows, grading_scale_data, remark_mode=assessment_config.get('remark_mode', 'grade_band'))
+                    overall_grade, _ = self._grade_for_score(float(overall_average or 0), grading_scale_data)
  
                     pdf_buffer = generate_report_card_pdf( 
                         student=student, 
@@ -5716,6 +6113,12 @@ class GradingScaleViewSet(viewsets.ModelViewSet):
     queryset = GradingScale.objects.all()
     serializer_class = GradingScaleSerializer
     permission_classes = [permissions.IsAuthenticated, CanManageGrading]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save()
 
     @action(detail=False, methods=['post'], url_path='set-default')
     def set_default_grading_scale(self, request):
@@ -5851,7 +6254,14 @@ class APICredentialViewSet(viewsets.ModelViewSet):
 
         def bad(detail, extra=None, code=status.HTTP_400_BAD_REQUEST):
             _record(False, detail, extra or {})
-            return Response({'ok': False, 'service': svc, 'detail': detail, 'extra': extra or {}}, status=code)
+            extra_payload = extra or {}
+            friendly_detail = detail
+            nested_error = None
+            if isinstance(extra_payload, dict):
+                nested_error = extra_payload.get('error') or extra_payload.get('response')
+            if nested_error:
+                friendly_detail = f'{detail} {nested_error}'
+            return Response({'ok': False, 'service': svc, 'detail': friendly_detail, 'extra': extra_payload}, status=code)
 
         def parse_json_response(resp):
             try:
@@ -10624,3 +11034,185 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             details=f'Rejected expense id={e.id}.',
         )
         return Response(ExpenseSerializer(e).data)
+
+
+# ==================== NEW VIEWSETS ====================
+
+class ExamTypeViewSet(viewsets.ModelViewSet):
+    queryset = ExamType.objects.all()
+    serializer_class = ExamTypeSerializer
+    permission_classes = [permissions.IsAuthenticated, CanManageTerms]
+    filterset_fields = ['is_active', 'exam_type']
+    search_fields = ['name', 'description']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
+
+
+class AcademicCalendarEventViewSet(viewsets.ModelViewSet):
+    queryset = AcademicCalendarEvent.objects.all()
+    serializer_class = AcademicCalendarEventSerializer
+    permission_classes = [permissions.IsAuthenticated, CanManageTerms]
+    filterset_fields = ['academic_term', 'event_type', 'exam_type']
+    search_fields = ['title', 'description']
+    ordering_fields = ['event_date', 'created_at']
+    ordering = ['event_date']
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class TermInstallmentPlanViewSet(viewsets.ModelViewSet):
+    queryset = TermInstallmentPlan.objects.all()
+    serializer_class = TermInstallmentPlanSerializer
+    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    filterset_fields = ['academic_term', 'number_of_installments']
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class StudentDebtRecordViewSet(viewsets.ModelViewSet):
+    queryset = StudentDebtRecord.objects.all()
+    serializer_class = StudentDebtRecordSerializer
+    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    filterset_fields = ['student', 'academic_term', 'is_settled']
+    search_fields = ['student__first_name', 'student__last_name']
+    ordering_fields = ['created_at', 'outstanding_amount']
+    ordering = ['-created_at']
+
+    @action(detail=True, methods=['post'], url_path='settle')
+    def settle_debt(self, request, pk=None):
+        debt = self.get_object()
+        if debt.is_settled:
+            return Response({'detail': 'This debt is already settled.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        debt.is_settled = True
+        debt.settled_date = timezone.now()
+        debt.settled_by = request.user
+        debt.outstanding_amount = Decimal('0')
+        debt.save()
+        
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='STUDENT_DEBT_SETTLED',
+            ip_address=get_client_ip(request),
+            details=f'Debt settled for student {debt.student} from {debt.academic_term}.'
+        )
+        return Response(StudentDebtRecordSerializer(debt).data)
+
+
+class TeacherSalaryViewSet(viewsets.ModelViewSet):
+    queryset = TeacherSalary.objects.all()
+    serializer_class = TeacherSalarySerializer
+    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    filterset_fields = ['teacher', 'academic_term', 'payment_status']
+    search_fields = ['teacher__user__first_name', 'teacher__user__last_name']
+    ordering_fields = ['created_at', 'base_salary', 'payment_status']
+    ordering = ['-created_at']
+
+    @action(detail=True, methods=['post'], url_path='approve')
+    def approve_salary(self, request, pk=None):
+        salary = self.get_object()
+        if salary.payment_status != 'pending':
+            return Response({'detail': 'Only pending salaries can be approved.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        salary.payment_status = 'approved'
+        salary.approved_by = request.user
+        salary.save()
+        
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='TEACHER_SALARY_APPROVED',
+            ip_address=get_client_ip(request),
+            details=f'Salary approved for teacher {salary.teacher}.'
+        )
+        return Response(TeacherSalarySerializer(salary).data)
+
+    @action(detail=True, methods=['post'], url_path='mark-paid')
+    def mark_paid(self, request, pk=None):
+        salary = self.get_object()
+        if salary.payment_status == 'paid':
+            return Response({'detail': 'Salary already marked as paid.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        salary.payment_status = 'paid'
+        salary.paid_by = request.user
+        salary.paid_date = timezone.now()
+        salary.amount_paid = salary.base_salary
+        salary.save()
+        
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='TEACHER_SALARY_PAID',
+            ip_address=get_client_ip(request),
+            details=f'Salary paid for teacher {salary.teacher}.'
+        )
+        return Response(TeacherSalarySerializer(salary).data)
+
+
+class TeacherAllowanceViewSet(viewsets.ModelViewSet):
+    queryset = TeacherAllowance.objects.all()
+    serializer_class = TeacherAllowanceSerializer
+    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    filterset_fields = ['teacher', 'academic_term', 'allowance_type', 'is_paid']
+    search_fields = ['teacher__user__first_name', 'teacher__user__last_name']
+    ordering_fields = ['created_at', 'amount', 'allowance_type']
+    ordering = ['-created_at']
+
+    @action(detail=True, methods=['post'], url_path='mark-paid')
+    def mark_paid(self, request, pk=None):
+        allowance = self.get_object()
+        if allowance.is_paid:
+            return Response({'detail': 'Allowance already marked as paid.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        allowance.is_paid = True
+        allowance.paid_date = timezone.now()
+        allowance.save()
+        
+        return Response(TeacherAllowanceSerializer(allowance).data)
+
+
+class OtherStaffViewSet(viewsets.ModelViewSet):
+    queryset = OtherStaff.objects.filter(is_active=True)
+    serializer_class = OtherStaffSerializer
+    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    filterset_fields = ['role', 'is_active']
+    search_fields = ['first_name', 'last_name', 'role']
+    ordering_fields = ['first_name', 'last_name', 'base_salary', 'start_date']
+    ordering = ['first_name', 'last_name']
+
+
+class StaffPayrollViewSet(viewsets.ModelViewSet):
+    queryset = StaffPayroll.objects.all()
+    serializer_class = StaffPayrollSerializer
+    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    filterset_fields = ['academic_term', 'payment_status', 'payment_method']
+    search_fields = ['teacher__user__first_name', 'teacher__user__last_name', 'other_staff__first_name', 'other_staff__last_name']
+    ordering_fields = ['created_at', 'net_amount', 'payment_status']
+    ordering = ['-created_at']
+
+    @action(detail=True, methods=['post'], url_path='approve')
+    def approve_payroll(self, request, pk=None):
+        payroll = self.get_object()
+        if payroll.payment_status != 'pending':
+            return Response({'detail': 'Only pending payroll can be approved.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        payroll.payment_status = 'approved'
+        payroll.approved_by = request.user
+        payroll.save()
+        
+        return Response(StaffPayrollSerializer(payroll).data)
+
+    @action(detail=True, methods=['post'], url_path='mark-paid')
+    def mark_paid(self, request, pk=None):
+        payroll = self.get_object()
+        if payroll.payment_status == 'paid':
+            return Response({'detail': 'Payroll already marked as paid.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        payroll.payment_status = 'paid'
+        payroll.paid_by = request.user
+        payroll.paid_date = timezone.now()
+        payroll.save()
+        
+        return Response(StaffPayrollSerializer(payroll).data)
