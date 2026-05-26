@@ -36,13 +36,19 @@ from .models import (
     InstallmentPlan,
     Mark,
     OTP,
+    OtherStaff,
     Payment,
     PrintQueueItem,
     ResultsHoldLog,
     SchoolClass,
+    StaffPayroll,
     Student,
+    StudentDebtRecord,
     StudentGuardianLink,
     SystemSetting,
+    Teacher,
+    TeacherAllowance,
+    TeacherSalary,
     Timetable,
     Notification,
     UserProfile,
@@ -467,6 +473,128 @@ class DashboardSummaryTests(BaseSchoolTestCase):
         self.assertNotIn('client_secret', providers['gmail'])
         self.assertIn('notifications', response.data)
         self.assertEqual(response.data['recent_failures'][0]['service_name'], 'mtn_momo')
+
+
+class PayrollDashboardTests(BaseSchoolTestCase):
+    def setUp(self):
+        self.bursar = self.create_user(
+            username='paybursar',
+            password='PayBursar123!',
+            role='bursar',
+            phone_number='0701888000',
+            email_address='paybursar@example.com',
+        )
+        self.teacher_user = self.create_user(
+            username='teachpay',
+            password='TeachPay123!',
+            role='teacher',
+            phone_number='0701888001',
+            email_address='teachpay@example.com',
+            first_name='Sarah',
+            last_name='Kay',
+        )
+        self.school_class = SchoolClass.objects.create(
+            level='P.4',
+            sections=['A'],
+            annual_fee=Decimal('900000.00'),
+            max_students_per_section=40,
+        )
+        self.term = AcademicTerm.objects.create(
+            academic_year=2026,
+            term_number=2,
+            start_date=date(2026, 5, 5),
+            end_date=date(2026, 7, 30),
+            holiday_break_days=0,
+            is_archived=False,
+        )
+        self.teacher = Teacher.objects.create(
+            user=self.teacher_user,
+            first_name='Sarah',
+            last_name='Kay',
+            phone='0701888010',
+            email='sarah.kay@example.com',
+            subjects=['Mathematics'],
+            employee_id='T-2026-001',
+        )
+        self.student = self.create_student(
+            student_id='BJS-PAY-001',
+            first_name='Nina',
+            last_name='Ayo',
+            school_class=self.school_class,
+        )
+        self.expense_category = ExpenseCategory.objects.create(name='Food')
+        self.salary = TeacherSalary.objects.create(
+            teacher=self.teacher,
+            academic_term=self.term,
+            base_salary=Decimal('350000.00'),
+        )
+        self.allowance = TeacherAllowance.objects.create(
+            teacher=self.teacher,
+            academic_term=self.term,
+            allowance_type='transport',
+            amount=Decimal('50000.00'),
+        )
+        self.other_staff = OtherStaff.objects.create(
+            first_name='John',
+            last_name='Cook',
+            role='cook',
+            phone_number='0701888020',
+            base_salary=Decimal('180000.00'),
+            start_date=date(2026, 1, 10),
+        )
+        Payment.objects.create(
+            student=self.student,
+            amount=Decimal('400000.00'),
+            method='cash',
+            academic_year=2026,
+            term_number=2,
+            status='approved',
+            received_by=self.bursar,
+        )
+        Expense.objects.create(
+            category=self.expense_category,
+            expense_date=date(2026, 6, 1),
+            amount=Decimal('70000.00'),
+            status='approved',
+            created_by=self.bursar,
+            approved_by=self.bursar,
+            approved_at=timezone.now(),
+        )
+        StudentDebtRecord.objects.create(
+            student=self.student,
+            academic_term=self.term,
+            original_amount=Decimal('120000.00'),
+            outstanding_amount=Decimal('60000.00'),
+        )
+        self.client.force_authenticate(user=self.bursar)
+
+    def test_payroll_dashboard_returns_profit_summary(self):
+        response = self.client.get('/api/staff-payroll/dashboard/', {'year': 2026, 'term': 2})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['term']['academic_year'], 2026)
+        self.assertEqual(response.data['counts']['pending_salary_records'], 1)
+        self.assertEqual(response.data['totals']['collected_revenue'], '400000.00')
+        self.assertEqual(response.data['totals']['approved_expenses'], '70000.00')
+        self.assertTrue(any(row['class_name'] == 'P.4' for row in response.data['class_breakdown']))
+
+    def test_generate_and_payroll_mark_paid_syncs_salary_and_notification(self):
+        generate_response = self.client.post('/api/staff-payroll/generate-term/', {'academic_term': self.term.id}, format='json')
+        self.assertEqual(generate_response.status_code, 200)
+        payroll = StaffPayroll.objects.get(teacher=self.teacher, academic_term=self.term)
+        self.assertEqual(payroll.net_amount, Decimal('400000.00'))
+
+        approve_response = self.client.post(f'/api/staff-payroll/{payroll.id}/approve/', {}, format='json')
+        self.assertEqual(approve_response.status_code, 200)
+        paid_response = self.client.post(f'/api/staff-payroll/{payroll.id}/mark-paid/', {}, format='json')
+        self.assertEqual(paid_response.status_code, 200)
+
+        self.salary.refresh_from_db()
+        self.allowance.refresh_from_db()
+        payroll.refresh_from_db()
+        self.assertEqual(self.salary.payment_status, 'paid')
+        self.assertTrue(self.allowance.is_paid)
+        self.assertEqual(payroll.payment_status, 'paid')
+        self.assertTrue(Notification.objects.filter(user=self.teacher_user, link_page='my_pay').exists())
 
 
 class StaffCredentialDeliveryTests(BaseSchoolTestCase):

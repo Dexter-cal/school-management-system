@@ -184,6 +184,7 @@ let AN_SHOW_ARCHIVED = false;
 let AN_SHOW_EXPIRED = false;
 let CH_FILTER = { class_id: '', year: '', term: '', active: '1', published: '1' };
 let FIN_FILTER = { year: '', term: '' };
+let PAYROLL_FILTER = { year: '', term: '' };
 let DELIVERY_FILTER = { channel: '', status: '', campaign: '', student: '', class_id: '', q: '' };
 let APPR_FILTER = { status: 'pending', method: 'bank', q: '' };
 let APPR_SELECTED = new Set();
@@ -882,6 +883,7 @@ const NAV = {
         { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' },
         { label: 'Deposits', icon: 'DP', page: 'deposits' },
         { label: 'Expenses', icon: 'EX', page: 'expenses' },
+        { label: 'Payroll & Profit', icon: 'PP', page: 'payroll' },
         { section: 'System' },
         { label: 'Audit Logs', icon: 'L', page: 'auditlogs' }, 
         { label: 'API Credentials', icon: 'K', page: 'credentials' }, 
@@ -889,6 +891,45 @@ const NAV = {
         { label: 'Print Queue', icon: 'PQ', page: 'printqueue' }, 
         { label: 'Settings', icon: 'S', page: 'settings' }, 
     ], 
+    director: [
+        { section: 'Overview' },
+        { label: 'Dashboard', icon: 'D', page: 'dashboard' },
+        { section: 'Administration' },
+        { label: 'User Accounts', icon: 'U', page: 'users' },
+        { label: 'Guardian Links', icon: 'GL', page: 'guardian_links' },
+        { label: 'Classes', icon: 'C', page: 'classes' },
+        { label: 'Teachers', icon: 'T', page: 'teachers' },
+        { label: 'Students', icon: 'S', page: 'students' },
+        { section: 'Academic' },
+        { label: 'Promotions', icon: 'P', page: 'promotions' },
+        { label: 'Subjects', icon: 'SB', page: 'subjects' },
+        { cap: 'term_manage', label: 'Terms', icon: 'R', page: 'terms' },
+        { cap: 'term_manage', label: 'Assessment Policy', icon: 'AP', page: 'assessment_policy' },
+        { label: 'Report Cards', icon: 'RC', page: 'reportcards' },
+        { label: 'Grading', icon: 'G', page: 'grading' },
+        { label: 'Timetable', icon: 'TT', page: 'timetable' },
+        { label: 'Teacher Attendance', icon: 'TA', page: 'teacher_attendance' },
+        { section: 'School' },
+        { label: 'Events', icon: 'EV', page: 'events' },
+        { label: 'Announcements', icon: 'AN', page: 'announcements' },
+        { label: 'Communications', icon: 'CM', page: 'communications' },
+        { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' },
+        { section: 'Finance' },
+        { label: 'Fees', icon: 'F', page: 'fees' },
+        { label: 'Class Charges', icon: 'CH', page: 'charges' },
+        { label: 'Payments', icon: '$', page: 'finance' },
+        { label: 'Cashbook', icon: 'CB', page: 'cashbook' },
+        { label: 'Approvals', icon: 'AP', page: 'approvals' },
+        { label: 'Installments', icon: 'IP', page: 'installment_plans' },
+        { label: 'Fee Promises', icon: 'FP', page: 'fee_promises' },
+        { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' },
+        { label: 'Deposits', icon: 'DP', page: 'deposits' },
+        { label: 'Expenses', icon: 'EX', page: 'expenses' },
+        { label: 'Payroll & Profit', icon: 'PP', page: 'payroll' },
+        { section: 'System' },
+        { label: 'Print Queue', icon: 'PQ', page: 'printqueue' },
+        { label: 'Settings', icon: 'S', page: 'settings' },
+    ],
     admin: [
         { section: 'Overview' },
         { label: 'Dashboard', icon: 'D', page: 'dashboard' },
@@ -950,6 +991,7 @@ const NAV = {
         { label: 'Fees', icon: 'F', page: 'fees' },
         { label: 'Class Charges', icon: 'CH', page: 'charges' },
         { label: 'Payments', icon: '$', page: 'finance' },
+        { label: 'Payroll & Profit', icon: 'PP', page: 'payroll' },
         { section: 'System' },
         { label: 'Settings', icon: 'S', page: 'settings' },
     ],
@@ -990,7 +1032,7 @@ const NAV = {
         { section: 'System' },
         { label: 'Settings', icon: 'S', page: 'settings' },
     ],
-    bursar: [{ section: 'Finance' }, { label: 'Fees', icon: 'F', page: 'fees' }, { label: 'Class Charges', icon: 'CH', page: 'charges' }, { label: 'Payments', icon: '$', page: 'finance' }, { label: 'Cashbook', icon: 'CB', page: 'cashbook' }, { label: 'Approvals', icon: 'AP', page: 'approvals' }, { label: 'Installments', icon: 'IP', page: 'installment_plans' }, { label: 'Fee Promises', icon: 'FP', page: 'fee_promises' }, { label: 'Deposits', icon: 'DP', page: 'deposits' }, { label: 'Expenses', icon: 'EX', page: 'expenses' }, { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' }, { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' }, { label: 'Settings', icon: 'S', page: 'settings' }],
+    bursar: [{ section: 'Finance' }, { label: 'Fees', icon: 'F', page: 'fees' }, { label: 'Class Charges', icon: 'CH', page: 'charges' }, { label: 'Payments', icon: '$', page: 'finance' }, { label: 'Cashbook', icon: 'CB', page: 'cashbook' }, { label: 'Approvals', icon: 'AP', page: 'approvals' }, { label: 'Installments', icon: 'IP', page: 'installment_plans' }, { label: 'Fee Promises', icon: 'FP', page: 'fee_promises' }, { label: 'Deposits', icon: 'DP', page: 'deposits' }, { label: 'Expenses', icon: 'EX', page: 'expenses' }, { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' }, { label: 'Payroll & Profit', icon: 'PP', page: 'payroll' }, { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' }, { label: 'Settings', icon: 'S', page: 'settings' }],
     teacher: [
         { section: 'Overview' },
         { label: 'My Dashboard', icon: 'D', page: 'dashboard' },
@@ -999,6 +1041,7 @@ const NAV = {
         { label: 'My Class', icon: 'CL', page: 'my_class' },
         { label: 'Gradebook', icon: 'GB', page: 'my_class' },
         { label: 'Exams Upload', icon: 'EX', page: 'exams' },
+        { label: 'My Pay', icon: 'PP', page: 'my_pay' },
         { cap: 'ai_tools', label: 'AI Tools', icon: 'AI', page: 'ai_tools' },
         { section: 'School' },
         { label: 'Events', icon: 'EV', page: 'events' },
@@ -4218,6 +4261,7 @@ async function loadPage(page, el, label) {
                 <button class="qa-btn" onclick="loadPage('fee_promises', null, 'Fee Promises')"><span class="qi">FP</span><span class="ql">Fee Promises</span></button>
                 <button class="qa-btn" onclick="loadPage('deposits', null, 'Deposits')"><span class="qi">DP</span><span class="ql">Deposits</span></button>
                 <button class="qa-btn" onclick="loadPage('adjustments', null, 'Adjustments')"><span class="qi">ADJ</span><span class="ql">Adjustments</span></button>
+                <button class="qa-btn" onclick="loadPage('payroll', null, 'Payroll & Profit')"><span class="qi">PP</span><span class="ql">Payroll & Profit</span></button>
               </div>
             </div></div>
             <div class="card" style="border-left:4px solid var(--m)"><div class="card-body">
@@ -4259,6 +4303,7 @@ async function loadPage(page, el, label) {
                 <button class="btn btn-ghost" onclick="loadPage('fee_promises', null, 'Fee Promises')">Fee Promises</button>
                 <button class="btn btn-ghost" onclick="loadPage('deposits', null, 'Deposits')">Bank Deposits</button>
                 <button class="btn btn-ghost" onclick="loadPage('expenses', null, 'Expenses')">Expenses</button>
+                <button class="btn btn-ghost" onclick="loadPage('payroll', null, 'Payroll & Profit')">Payroll & Profit</button>
                 <button class="btn btn-ghost" onclick="loadPage('adjustments', null, 'Adjustments')">Adjustments</button>
                 <button class="btn btn-ghost" onclick="loadPage('students', null, 'Students')">Student Search</button>
                 <div class="sub" style="margin-left:auto">Bursar workspace: record payments, close the day, track commitments, reconcile deposits, and follow every student finance event in one area.</div>
@@ -4417,6 +4462,126 @@ async function loadPage(page, el, label) {
                 <tbody id="pay-body">${rows}</tbody>
               </table>
             </div></div>
+          </div>`;
+    } else if (page === 'payroll') {
+        const role = (currentUser.profile && currentUser.profile.role) || 'admin';
+        if (!(['superadmin', 'director', 'headteacher', 'bursar'].includes(role))) {
+            main.innerHTML = `<div class="page"><div class="card"><div class="card-body">Only finance and school leadership roles can access payroll.</div></div></div>`;
+            return;
+        }
+        const activeTerm = await API.fetch('/terms/').catch(() => null);
+        const defYear = (activeTerm && activeTerm.academic_year) ? activeTerm.academic_year : new Date().getFullYear();
+        const defTerm = (activeTerm && activeTerm.term_number) ? activeTerm.term_number : 1;
+        if (!PAYROLL_FILTER.year) PAYROLL_FILTER.year = String(defYear);
+        if (!PAYROLL_FILTER.term) PAYROLL_FILTER.term = String(defTerm);
+        const year = Number(PAYROLL_FILTER.year || defYear);
+        const term = Number(PAYROLL_FILTER.term || defTerm);
+        const [dashboard, terms, teacherSalaries, teacherAllowances, payrollRows, otherStaff] = await Promise.all([
+            API.fetch(`/staff-payroll/dashboard/?year=${encodeURIComponent(year)}&term=${encodeURIComponent(term)}`).catch(() => null),
+            API.fetch('/terms/all').catch(() => []),
+            API.fetch('/teacher-salaries/').catch(() => []),
+            API.fetch('/teacher-allowances/').catch(() => []),
+            API.fetch('/staff-payroll/').catch(() => []),
+            API.fetch('/other-staff/').catch(() => []),
+        ]);
+        const selectedTerm = (terms || []).find(t => Number(t.academic_year) === Number(year) && Number(t.term_number) === Number(term));
+        const termId = selectedTerm ? Number(selectedTerm.id) : '';
+        const payrollFiltered = (payrollRows || []).filter(row => !termId || Number(row.academic_term || 0) === Number(termId));
+        const salaryFiltered = (teacherSalaries || []).filter(row => !termId || Number(row.academic_term || 0) === Number(termId));
+        const allowanceFiltered = (teacherAllowances || []).filter(row => !termId || Number(row.academic_term || 0) === Number(termId));
+        const totals = (dashboard && dashboard.totals) || {};
+        const counts = (dashboard && dashboard.counts) || {};
+        const classRows = ((dashboard && dashboard.class_breakdown) || []).map(row => `<tr><td>${escapeHtml(row.class_name || '')}</td><td>${row.students || 0}</td><td>UGX ${fmt(Number(row.expected_fees || 0).toFixed(0))}</td><td>UGX ${fmt(Number(row.collected_fees || 0).toFixed(0))}</td><td>UGX ${fmt(Number(row.outstanding_fees || 0).toFixed(0))}</td></tr>`).join('') || `<tr><td colspan="5" style="color:var(--99)">No class finance data for this term.</td></tr>`;
+        const expenseRows = ((dashboard && dashboard.expense_breakdown) || []).map(row => `<tr><td>${escapeHtml(row.category || '')}</td><td>${row.count || 0}</td><td>UGX ${fmt(Number(row.total_amount || 0).toFixed(0))}</td></tr>`).join('') || `<tr><td colspan="3" style="color:var(--99)">No approved expenses in this term.</td></tr>`;
+        const payrollTableRows = payrollFiltered.slice(0, 30).map(row => `<tr>
+            <td><strong>${escapeHtml(row.teacher_name || row.other_staff_name || 'Staff')}</strong><div class="sub">${escapeHtml(row.term_display || '')}</div></td>
+            <td>UGX ${fmt(Number(row.gross_amount || 0).toFixed(0))}</td>
+            <td>UGX ${fmt(Number(row.net_amount || 0).toFixed(0))}</td>
+            <td>${escapeHtml(row.payment_status || '')}</td>
+            <td>${escapeHtml(row.payment_method || '')}</td>
+            <td style="white-space:nowrap">
+              ${row.payment_status === 'pending' ? `<button class="btn btn-xs btn-ghost" onclick="approvePayrollRecord(${row.id})">Approve</button>` : ''}
+              ${row.payment_status !== 'paid' ? `<button class="btn btn-xs btn-ghost" onclick="markPayrollRecordPaid(${row.id})">Mark Paid</button>` : ''}
+            </td>
+        </tr>`).join('') || `<tr><td colspan="6" style="color:var(--99)">No payroll records yet for this filter.</td></tr>`;
+        const salaryTableRows = salaryFiltered.slice(0, 20).map(row => `<tr>
+            <td>${escapeHtml(row.teacher_name || 'Teacher')}</td>
+            <td>UGX ${fmt(Number(row.base_salary || 0).toFixed(0))}</td>
+            <td>${escapeHtml(row.payment_status || '')}</td>
+            <td>${escapeHtml(row.term_display || '')}</td>
+            <td style="white-space:nowrap">${row.payment_status === 'pending' ? `<button class="btn btn-xs btn-ghost" onclick="approveTeacherSalary(${row.id})">Approve</button>` : ''}</td>
+        </tr>`).join('') || `<tr><td colspan="5" style="color:var(--99)">No teacher salary records yet.</td></tr>`;
+        const allowanceTableRows = allowanceFiltered.slice(0, 20).map(row => `<tr>
+            <td>${escapeHtml(row.teacher_name || 'Teacher')}</td>
+            <td>${escapeHtml(row.allowance_type || '')}</td>
+            <td>UGX ${fmt(Number(row.amount || 0).toFixed(0))}</td>
+            <td>${row.is_paid ? '<span class="badge green">Paid</span>' : '<span class="badge">Pending</span>'}</td>
+            <td>${!row.is_paid ? `<button class="btn btn-xs btn-ghost" onclick="markAllowancePaid(${row.id})">Mark Paid</button>` : ''}</td>
+        </tr>`).join('') || `<tr><td colspan="5" style="color:var(--99)">No allowance records yet.</td></tr>`;
+        const staffTableRows = (otherStaff || []).slice(0, 20).map(row => `<tr><td>${escapeHtml(`${row.first_name || ''} ${row.last_name || ''}`.trim())}</td><td>${escapeHtml(row.role || '')}</td><td>UGX ${fmt(Number(row.base_salary || 0).toFixed(0))}</td></tr>`).join('') || `<tr><td colspan="3" style="color:var(--99)">No extra staff added yet.</td></tr>`;
+        main.innerHTML = `
+          <div class="page">
+            <div class="page-hero"><div class="page-title">Payroll & Profit</div></div>
+            <div class="card" style="margin-bottom:12px"><div class="card-body">
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+                <div class="field" style="margin:0;min-width:160px"><label>Academic Year</label><input class="field-input" id="payroll-year" type="number" value="${year}"></div>
+                <div class="field" style="margin:0;min-width:140px"><label>Term</label><select class="field-select" id="payroll-term"><option value="1" ${term===1?'selected':''}>Term 1</option><option value="2" ${term===2?'selected':''}>Term 2</option><option value="3" ${term===3?'selected':''}>Term 3</option></select></div>
+                <button class="btn btn-primary" onclick="setPayrollFilterAndReload()">Load Dashboard</button>
+                <button class="btn btn-ghost" onclick="generateTermPayroll(${termId || 0})">Generate/Refresh Term Payroll</button>
+                <button class="btn btn-ghost" onclick="loadPage('finance', null, 'Payments')">Back To Payments</button>
+                <div class="sub" style="flex:1">This dashboard shows collections, approved expenses, payroll commitments, debt, and the real balance left after salaries are removed.</div>
+              </div>
+            </div></div>
+            <div class="stats stats-4" style="margin-bottom:12px">
+              <div class="stat-card"><div class="stat-num">UGX ${fmt(Number(totals.collected_revenue || 0).toFixed(0))}</div><div class="stat-label">Collected Revenue</div><div class="stat-accent green"></div></div>
+              <div class="stat-card"><div class="stat-num">UGX ${fmt(Number(totals.approved_expenses || 0).toFixed(0))}</div><div class="stat-label">Approved Expenses</div><div class="stat-accent red"></div></div>
+              <div class="stat-card"><div class="stat-num">UGX ${fmt(Number(totals.paid_payroll || 0).toFixed(0))}</div><div class="stat-label">Paid Payroll</div><div class="stat-accent blue"></div></div>
+              <div class="stat-card"><div class="stat-num">UGX ${fmt(Number(totals.profit_after_paid_payroll || 0).toFixed(0))}</div><div class="stat-label">Profit After Paid Salaries</div><div class="stat-accent gold"></div></div>
+            </div>
+            <div class="stats stats-4" style="margin-bottom:12px">
+              <div class="stat-card"><div class="stat-num">${counts.pending_payroll_records || 0}</div><div class="stat-label">Pending Payroll</div><div class="stat-accent red"></div></div>
+              <div class="stat-card"><div class="stat-num">${counts.pending_salary_records || 0}</div><div class="stat-label">Pending Salary Approvals</div><div class="stat-accent blue"></div></div>
+              <div class="stat-card"><div class="stat-num">UGX ${fmt(Number(totals.old_term_debt || 0).toFixed(0))}</div><div class="stat-label">Old Debt Outstanding</div><div class="stat-accent red"></div></div>
+              <div class="stat-card"><div class="stat-num">UGX ${fmt(Number(totals.current_term_debt || 0).toFixed(0))}</div><div class="stat-label">Current Term Debt</div><div class="stat-accent gold"></div></div>
+            </div>
+            <div class="grid-2">
+              <div class="card"><div class="card-head"><div class="card-title">Class Income Breakdown</div></div><div class="card-body no-pad"><div class="tw"><table class="tbl"><thead><tr><th>Class</th><th>Students</th><th>Expected</th><th>Collected</th><th>Outstanding</th></tr></thead><tbody>${classRows}</tbody></table></div></div></div>
+              <div class="card"><div class="card-head"><div class="card-title">Expense Breakdown</div></div><div class="card-body no-pad"><div class="tw"><table class="tbl"><thead><tr><th>Category</th><th>Count</th><th>Total</th></tr></thead><tbody>${expenseRows}</tbody></table></div></div></div>
+            </div>
+            <div style="height:12px"></div>
+            <div class="grid-2">
+              <div class="card"><div class="card-head"><div class="card-title">Payroll Approval Queue</div><div class="sub">Approve, then mark paid when the actual salary is issued.</div></div><div class="card-body no-pad"><div class="tw"><table class="tbl"><thead><tr><th>Staff</th><th>Gross</th><th>Net</th><th>Status</th><th>Method</th><th></th></tr></thead><tbody>${payrollTableRows}</tbody></table></div></div></div>
+              <div class="card"><div class="card-head"><div class="card-title">Teacher Salary Records</div></div><div class="card-body no-pad"><div class="tw"><table class="tbl"><thead><tr><th>Teacher</th><th>Base Salary</th><th>Status</th><th>Term</th><th></th></tr></thead><tbody>${salaryTableRows}</tbody></table></div></div></div>
+            </div>
+            <div style="height:12px"></div>
+            <div class="grid-2">
+              <div class="card"><div class="card-head"><div class="card-title">Teacher Allowances</div></div><div class="card-body no-pad"><div class="tw"><table class="tbl"><thead><tr><th>Teacher</th><th>Allowance</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${allowanceTableRows}</tbody></table></div></div></div>
+              <div class="card"><div class="card-head"><div class="card-title">Other Staff Covered</div><div class="sub">Cooks, guards, cleaners, drivers and other workers included in profit calculations.</div></div><div class="card-body no-pad"><div class="tw"><table class="tbl"><thead><tr><th>Name</th><th>Role</th><th>Base Salary</th></tr></thead><tbody>${staffTableRows}</tbody></table></div></div></div>
+            </div>
+          </div>`;
+    } else if (page === 'my_pay') {
+        const role = (currentUser.profile && currentUser.profile.role) || 'teacher';
+        if (role !== 'teacher') {
+            main.innerHTML = `<div class="page"><div class="card"><div class="card-body">Only teachers can access this page.</div></div></div>`;
+            return;
+        }
+        const data = await API.fetch('/staff-payroll/my-summary/').catch(() => null);
+        const latestSalary = data && data.latest_salary ? data.latest_salary : null;
+        const latestPayroll = data && data.latest_payroll ? data.latest_payroll : null;
+        const salaryRows = ((data && data.salary_history) || []).map(row => `<tr><td>${escapeHtml(row.term_display || '')}</td><td>UGX ${fmt(Number(row.base_salary || 0).toFixed(0))}</td><td>${escapeHtml(row.payment_status || '')}</td><td>${escapeHtml(row.paid_date ? formatDateTime(row.paid_date) : '-')}</td></tr>`).join('') || `<tr><td colspan="4" style="color:var(--99)">No salary history yet.</td></tr>`;
+        const allowanceRows = ((data && data.allowance_history) || []).map(row => `<tr><td>${escapeHtml(row.term_display || '')}</td><td>${escapeHtml(row.allowance_type || '')}</td><td>UGX ${fmt(Number(row.amount || 0).toFixed(0))}</td><td>${row.is_paid ? 'Paid' : 'Pending'}</td></tr>`).join('') || `<tr><td colspan="4" style="color:var(--99)">No allowances yet.</td></tr>`;
+        main.innerHTML = `
+          <div class="page">
+            <div class="page-hero"><div class="page-title">My Pay</div></div>
+            <div class="stats stats-3" style="margin-bottom:12px">
+              <div class="stat-card"><div class="stat-num">UGX ${fmt(Number((latestSalary && latestSalary.base_salary) || 0).toFixed(0))}</div><div class="stat-label">Latest Base Salary</div><div class="stat-accent blue"></div></div>
+              <div class="stat-card"><div class="stat-num">UGX ${fmt(Number((latestPayroll && latestPayroll.net_amount) || 0).toFixed(0))}</div><div class="stat-label">Latest Net Pay</div><div class="stat-accent green"></div></div>
+              <div class="stat-card"><div class="stat-num">${escapeHtml((latestPayroll && latestPayroll.payment_status) || (latestSalary && latestSalary.payment_status) || 'No record')}</div><div class="stat-label">Latest Payment Status</div><div class="stat-accent gold"></div></div>
+            </div>
+            <div class="grid-2">
+              <div class="card"><div class="card-head"><div class="card-title">Salary History</div></div><div class="card-body no-pad"><div class="tw"><table class="tbl"><thead><tr><th>Term</th><th>Base Salary</th><th>Status</th><th>Paid Date</th></tr></thead><tbody>${salaryRows}</tbody></table></div></div></div>
+              <div class="card"><div class="card-head"><div class="card-title">Allowance History</div></div><div class="card-body no-pad"><div class="tw"><table class="tbl"><thead><tr><th>Term</th><th>Allowance</th><th>Amount</th><th>Status</th></tr></thead><tbody>${allowanceRows}</tbody></table></div></div></div>
+            </div>
           </div>`;
     } else if (page === 'cashbook') {
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
@@ -9980,6 +10145,48 @@ function setFinanceFilterAndReload() {
     FIN_FILTER.year = y || FIN_FILTER.year;
     FIN_FILTER.term = t || FIN_FILTER.term;
     loadPage('finance', null, 'Payments');
+}
+
+function setPayrollFilterAndReload() {
+    const y = (document.getElementById('payroll-year')?.value || '').trim();
+    const t = (document.getElementById('payroll-term')?.value || '').trim();
+    if (y && !String(y).match(/^\d{4}$/)) { flash('Enter a valid year (e.g. 2026).'); return; }
+    if (t && !String(t).match(/^[1-3]$/)) { flash('Term must be 1, 2, or 3.'); return; }
+    PAYROLL_FILTER.year = y || PAYROLL_FILTER.year;
+    PAYROLL_FILTER.term = t || PAYROLL_FILTER.term;
+    loadPage('payroll', null, 'Payroll & Profit');
+}
+
+async function generateTermPayroll(termId) {
+    const payload = {};
+    if (termId) payload.academic_term = Number(termId);
+    const res = await API.fetch('/staff-payroll/generate-term/', { method: 'POST', body: JSON.stringify(payload) });
+    flash((res && res.detail) ? `${res.detail} Created ${res.created || 0}, updated ${res.updated || 0}.` : 'Payroll generated.');
+    loadPage('payroll', null, 'Payroll & Profit');
+}
+
+async function approvePayrollRecord(id) {
+    await API.fetch(`/staff-payroll/${id}/approve/`, { method: 'POST', body: JSON.stringify({}) });
+    flash('Payroll approved.');
+    loadPage('payroll', null, 'Payroll & Profit');
+}
+
+async function markPayrollRecordPaid(id) {
+    await API.fetch(`/staff-payroll/${id}/mark-paid/`, { method: 'POST', body: JSON.stringify({}) });
+    flash('Payroll marked as paid.');
+    loadPage('payroll', null, 'Payroll & Profit');
+}
+
+async function approveTeacherSalary(id) {
+    await API.fetch(`/teacher-salaries/${id}/approve/`, { method: 'POST', body: JSON.stringify({}) });
+    flash('Teacher salary approved.');
+    loadPage('payroll', null, 'Payroll & Profit');
+}
+
+async function markAllowancePaid(id) {
+    await API.fetch(`/teacher-allowances/${id}/mark-paid/`, { method: 'POST', body: JSON.stringify({}) });
+    flash('Allowance marked as paid.');
+    loadPage('payroll', null, 'Payroll & Profit');
 }
 
 function ttOnClassChanged() {

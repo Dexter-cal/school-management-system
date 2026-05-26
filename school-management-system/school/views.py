@@ -757,6 +757,16 @@ class IsFinanceUser(permissions.BasePermission):
             return False
 
 
+class IsPayrollUser(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        role = get_role(request.user)
+        return role in ['superadmin', 'director', 'headteacher', 'bursar']
+
+
 class IsStaffAdmin(permissions.BasePermission):
     """
     Superadmin + admin-like roles + reception/bursar (for staff operations).
@@ -11106,7 +11116,7 @@ class StudentDebtRecordViewSet(viewsets.ModelViewSet):
 class TeacherSalaryViewSet(viewsets.ModelViewSet):
     queryset = TeacherSalary.objects.all()
     serializer_class = TeacherSalarySerializer
-    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    permission_classes = [permissions.IsAuthenticated, IsPayrollUser]
     filterset_fields = ['teacher', 'academic_term', 'payment_status']
     search_fields = ['teacher__user__first_name', 'teacher__user__last_name']
     ordering_fields = ['created_at', 'base_salary', 'payment_status']
@@ -11154,7 +11164,7 @@ class TeacherSalaryViewSet(viewsets.ModelViewSet):
 class TeacherAllowanceViewSet(viewsets.ModelViewSet):
     queryset = TeacherAllowance.objects.all()
     serializer_class = TeacherAllowanceSerializer
-    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    permission_classes = [permissions.IsAuthenticated, IsPayrollUser]
     filterset_fields = ['teacher', 'academic_term', 'allowance_type', 'is_paid']
     search_fields = ['teacher__user__first_name', 'teacher__user__last_name']
     ordering_fields = ['created_at', 'amount', 'allowance_type']
@@ -11176,7 +11186,7 @@ class TeacherAllowanceViewSet(viewsets.ModelViewSet):
 class OtherStaffViewSet(viewsets.ModelViewSet):
     queryset = OtherStaff.objects.filter(is_active=True)
     serializer_class = OtherStaffSerializer
-    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    permission_classes = [permissions.IsAuthenticated, IsPayrollUser]
     filterset_fields = ['role', 'is_active']
     search_fields = ['first_name', 'last_name', 'role']
     ordering_fields = ['first_name', 'last_name', 'base_salary', 'start_date']
@@ -11186,26 +11196,280 @@ class OtherStaffViewSet(viewsets.ModelViewSet):
 class StaffPayrollViewSet(viewsets.ModelViewSet):
     queryset = StaffPayroll.objects.all()
     serializer_class = StaffPayrollSerializer
-    permission_classes = [permissions.IsAuthenticated, IsFinanceUser]
+    permission_classes = [permissions.IsAuthenticated, IsPayrollUser]
     filterset_fields = ['academic_term', 'payment_status', 'payment_method']
     search_fields = ['teacher__user__first_name', 'teacher__user__last_name', 'other_staff__first_name', 'other_staff__last_name']
     ordering_fields = ['created_at', 'net_amount', 'payment_status']
     ordering = ['-created_at']
 
+    def _can_manage_payroll(self, user):
+        role = get_role(user)
+        return bool(user and user.is_authenticated and (user.is_superuser or role in ['superadmin', 'director', 'headteacher', 'bursar']))
+
+    def _notify_payroll_paid(self, payroll):
+        teacher = getattr(payroll, 'teacher', None)
+        teacher_user = getattr(teacher, 'user', None) if teacher else None
+        if teacher_user:
+            Notification.objects.create(
+                user=teacher_user,
+                category='finance',
+                title='Salary payment processed',
+                message=f'Your payroll for {getattr(payroll.academic_term, "__str__", lambda: "the selected term")()} has been marked as paid.',
+                link_page='my_pay',
+                link_object_id=payroll.id,
+                meta={'payroll_id': payroll.id, 'payment_status': payroll.payment_status},
+            )
+
+    def _term_dashboard(self, academic_term):
+        payments_qs = Payment.objects.filter(
+            academic_year=academic_term.academic_year,
+            term_number=academic_term.term_number,
+            status__in=['approved', 'received'],
+        )
+        expenses_qs = Expense.objects.filter(
+            status='approved',
+            expense_date__range=(academic_term.start_date, academic_term.end_date),
+        )
+        payroll_qs = StaffPayroll.objects.filter(academic_term=academic_term)
+        salary_qs = TeacherSalary.objects.filter(academic_term=academic_term)
+        allowance_qs = TeacherAllowance.objects.filter(academic_term=academic_term)
+        debt_qs = StudentDebtRecord.objects.filter(is_settled=False)
+
+        collected_total = _to_decimal(payments_qs.aggregate(total=Sum('amount'))['total'])
+        approved_expense_total = _to_decimal(expenses_qs.aggregate(total=Sum('amount'))['total'])
+        paid_payroll_total = _to_decimal(payroll_qs.filter(payment_status='paid').aggregate(total=Sum('net_amount'))['total'])
+        approved_payroll_total = _to_decimal(payroll_qs.filter(payment_status='approved').aggregate(total=Sum('net_amount'))['total'])
+        pending_payroll_total = _to_decimal(payroll_qs.filter(payment_status='pending').aggregate(total=Sum('net_amount'))['total'])
+        unpaid_teacher_salary_total = _to_decimal(salary_qs.exclude(payment_status='paid').aggregate(total=Sum('base_salary'))['total'])
+        unpaid_allowance_total = _to_decimal(allowance_qs.filter(is_paid=False).aggregate(total=Sum('amount'))['total'])
+        old_debt_total = _to_decimal(
+            debt_qs.exclude(academic_term=academic_term).aggregate(total=Sum('outstanding_amount'))['total']
+        )
+        current_term_debt_total = _to_decimal(
+            debt_qs.filter(academic_term=academic_term).aggregate(total=Sum('outstanding_amount'))['total']
+        )
+
+        class_rows = []
+        active_students = Student.objects.select_related('current_class').filter(status='active')
+        grouped = {}
+        for stu in active_students:
+            class_id = getattr(stu, 'current_class_id', None)
+            if not class_id:
+                continue
+            class_name = getattr(getattr(stu, 'current_class', None), 'level', None) or 'Unassigned'
+            row = grouped.setdefault(class_id, {
+                'class_id': class_id,
+                'class_name': class_name,
+                'students': 0,
+                'expected_fees': Decimal('0.00'),
+                'collected_fees': Decimal('0.00'),
+                'outstanding_fees': Decimal('0.00'),
+            })
+            row['students'] += 1
+            opening = _opening_balance_before_term(stu, academic_term.academic_year, academic_term.term_number)
+            adj_now = _adjustments_for_term(stu, academic_term.academic_year, academic_term.term_number)
+            term_due = (_base_due_for_term(stu, academic_term.academic_year, academic_term.term_number) + _class_extras_for_term(stu, academic_term.academic_year, academic_term.term_number) + adj_now).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            paid_now = _payments_for_term(stu, academic_term.academic_year, academic_term.term_number)
+            credit_bf = opening if opening > 0 else Decimal('0.00')
+            arrears_bf = (-opening) if opening < 0 else Decimal('0.00')
+            total_to_settle = (term_due + arrears_bf).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            available = (credit_bf + paid_now).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            paid_applied = min(available, total_to_settle)
+            balance_due = (total_to_settle - paid_applied).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            row['expected_fees'] += total_to_settle
+            row['collected_fees'] += paid_applied
+            row['outstanding_fees'] += balance_due
+
+        for row in sorted(grouped.values(), key=lambda item: item['class_name']):
+            class_rows.append({
+                'class_id': row['class_id'],
+                'class_name': row['class_name'],
+                'students': row['students'],
+                'expected_fees': str(row['expected_fees'].quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'collected_fees': str(row['collected_fees'].quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'outstanding_fees': str(row['outstanding_fees'].quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            })
+
+        expense_rows = list(
+            expenses_qs.values('category__name')
+            .annotate(total=Sum('amount'), count=Count('id'))
+            .order_by('-total')
+        )
+        expense_breakdown = [
+            {
+                'category': item.get('category__name') or 'Uncategorised',
+                'count': int(item.get('count') or 0),
+                'total_amount': str(_to_decimal(item.get('total')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            }
+            for item in expense_rows
+        ]
+
+        recent_payroll = StaffPayrollSerializer(payroll_qs.select_related('teacher__user', 'other_staff', 'academic_term')[:12], many=True).data
+        return {
+            'term': {
+                'id': academic_term.id,
+                'academic_year': academic_term.academic_year,
+                'term_number': academic_term.term_number,
+                'start_date': academic_term.start_date,
+                'end_date': academic_term.end_date,
+            },
+            'totals': {
+                'collected_revenue': str(collected_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'approved_expenses': str(approved_expense_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'paid_payroll': str(paid_payroll_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'approved_payroll': str(approved_payroll_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'pending_payroll': str(pending_payroll_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'unpaid_teacher_salaries': str(unpaid_teacher_salary_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'unpaid_allowances': str(unpaid_allowance_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'current_term_debt': str(current_term_debt_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'old_term_debt': str(old_debt_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'profit_after_expenses': str((collected_total - approved_expense_total).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'profit_after_paid_payroll': str((collected_total - approved_expense_total - paid_payroll_total).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            },
+            'counts': {
+                'pending_salary_records': int(salary_qs.filter(payment_status='pending').count()),
+                'approved_salary_records': int(salary_qs.filter(payment_status='approved').count()),
+                'pending_payroll_records': int(payroll_qs.filter(payment_status='pending').count()),
+                'approved_payroll_records': int(payroll_qs.filter(payment_status='approved').count()),
+                'paid_payroll_records': int(payroll_qs.filter(payment_status='paid').count()),
+                'other_staff_count': int(OtherStaff.objects.filter(is_active=True).count()),
+            },
+            'class_breakdown': class_rows,
+            'expense_breakdown': expense_breakdown,
+            'recent_payroll': recent_payroll,
+        }
+
+    @action(detail=False, methods=['get'], url_path='dashboard')
+    def dashboard(self, request):
+        if not self._can_manage_payroll(request.user):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        year_q = (request.query_params.get('year') or '').strip()
+        term_q = (request.query_params.get('term') or '').strip()
+        if year_q.isdigit() and term_q.isdigit():
+            academic_term = AcademicTerm.objects.filter(academic_year=int(year_q), term_number=int(term_q)).first()
+        else:
+            academic_term = _current_term()
+        if not academic_term:
+            return Response({'detail': 'No academic term found.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self._term_dashboard(academic_term))
+
+    @action(detail=False, methods=['post'], url_path='generate-term')
+    def generate_term_payroll(self, request):
+        if not self._can_manage_payroll(request.user):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        term_id = (request.data or {}).get('academic_term')
+        academic_term = AcademicTerm.objects.filter(id=term_id).first() if str(term_id or '').isdigit() else _current_term()
+        if not academic_term:
+            return Response({'detail': 'Academic term not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created = 0
+        updated = 0
+        skipped = 0
+        with transaction.atomic():
+            for salary in TeacherSalary.objects.select_related('teacher__user').filter(academic_term=academic_term).exclude(payment_status='paid'):
+                allowance_total = _to_decimal(
+                    TeacherAllowance.objects.filter(teacher=salary.teacher, academic_term=academic_term, is_paid=False).aggregate(total=Sum('amount'))['total']
+                )
+                gross_amount = (_to_decimal(salary.base_salary) + allowance_total).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                active_qs = StaffPayroll.objects.filter(academic_term=academic_term, teacher=salary.teacher).exclude(payment_status='paid').order_by('-created_at')
+                payroll = active_qs.first()
+                if payroll is None:
+                    StaffPayroll.objects.create(
+                        academic_term=academic_term,
+                        teacher=salary.teacher,
+                        gross_amount=gross_amount,
+                        deductions=Decimal('0.00'),
+                        net_amount=gross_amount,
+                        payment_method='cash',
+                        payment_status='pending',
+                        notes=f'Generated from salary and unpaid allowances for {academic_term}.',
+                    )
+                    created += 1
+                else:
+                    payroll.gross_amount = gross_amount
+                    payroll.net_amount = (gross_amount - _to_decimal(payroll.deductions)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    payroll.notes = f'Updated from salary and unpaid allowances for {academic_term}.'
+                    payroll.save(update_fields=['gross_amount', 'net_amount', 'notes', 'updated_at'])
+                    updated += 1
+
+            for staff in OtherStaff.objects.filter(is_active=True):
+                active_qs = StaffPayroll.objects.filter(academic_term=academic_term, other_staff=staff).exclude(payment_status='paid').order_by('-created_at')
+                payroll = active_qs.first()
+                if payroll is None:
+                    amount = _to_decimal(staff.base_salary)
+                    StaffPayroll.objects.create(
+                        academic_term=academic_term,
+                        other_staff=staff,
+                        gross_amount=amount,
+                        deductions=Decimal('0.00'),
+                        net_amount=amount,
+                        payment_method='cash',
+                        payment_status='pending',
+                        notes=f'Generated from staff base salary for {academic_term}.',
+                    )
+                    created += 1
+                else:
+                    skipped += 1
+
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='PAYROLL_GENERATED',
+            ip_address=get_client_ip(request),
+            details=f'Generated payroll for term id={academic_term.id}: created={created}, updated={updated}, skipped={skipped}.',
+        )
+        return Response({
+            'detail': 'Payroll generated successfully.',
+            'academic_term': academic_term.id,
+            'created': created,
+            'updated': updated,
+            'skipped': skipped,
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='my-summary', permission_classes=[permissions.IsAuthenticated])
+    def my_summary(self, request):
+        role = get_role(request.user)
+        if role != 'teacher':
+            return Response({'detail': 'Only teachers can view this summary.'}, status=status.HTTP_403_FORBIDDEN)
+        teacher = Teacher.objects.filter(user=request.user).first()
+        if not teacher:
+            return Response({'detail': 'Teacher profile not found.'}, status=status.HTTP_404_NOT_FOUND)
+        salaries = TeacherSalary.objects.filter(teacher=teacher).select_related('academic_term').order_by('-created_at')
+        allowances = TeacherAllowance.objects.filter(teacher=teacher).select_related('academic_term').order_by('-created_at')
+        payroll = StaffPayroll.objects.filter(teacher=teacher).select_related('academic_term').order_by('-created_at')
+        latest_salary = salaries.first()
+        latest_payroll = payroll.first()
+        return Response({
+            'teacher_name': request.user.get_full_name() or request.user.username,
+            'latest_salary': TeacherSalarySerializer(latest_salary).data if latest_salary else None,
+            'latest_payroll': StaffPayrollSerializer(latest_payroll).data if latest_payroll else None,
+            'salary_history': TeacherSalarySerializer(salaries[:12], many=True).data,
+            'allowance_history': TeacherAllowanceSerializer(allowances[:12], many=True).data,
+            'payroll_history': StaffPayrollSerializer(payroll[:12], many=True).data,
+        }, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'], url_path='approve')
     def approve_payroll(self, request, pk=None):
+        if not self._can_manage_payroll(request.user):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
         payroll = self.get_object()
         if payroll.payment_status != 'pending':
             return Response({'detail': 'Only pending payroll can be approved.'}, status=status.HTTP_400_BAD_REQUEST)
         
         payroll.payment_status = 'approved'
         payroll.approved_by = request.user
-        payroll.save()
-        
+        payroll.save(update_fields=['payment_status', 'approved_by', 'updated_at'])
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='PAYROLL_APPROVED',
+            ip_address=get_client_ip(request),
+            details=f'Payroll approved id={payroll.id}.',
+        )
         return Response(StaffPayrollSerializer(payroll).data)
 
     @action(detail=True, methods=['post'], url_path='mark-paid')
     def mark_paid(self, request, pk=None):
+        if not self._can_manage_payroll(request.user):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
         payroll = self.get_object()
         if payroll.payment_status == 'paid':
             return Response({'detail': 'Payroll already marked as paid.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -11213,6 +11477,27 @@ class StaffPayrollViewSet(viewsets.ModelViewSet):
         payroll.payment_status = 'paid'
         payroll.paid_by = request.user
         payroll.paid_date = timezone.now()
-        payroll.save()
-        
+        payroll.save(update_fields=['payment_status', 'paid_by', 'paid_date', 'updated_at'])
+
+        if payroll.teacher:
+            salary = TeacherSalary.objects.filter(teacher=payroll.teacher, academic_term=payroll.academic_term).exclude(payment_status='paid').order_by('-created_at').first()
+            if salary:
+                salary.payment_status = 'paid'
+                salary.paid_by = request.user
+                salary.paid_date = payroll.paid_date
+                salary.amount_paid = _to_decimal(salary.base_salary)
+                salary.save(update_fields=['payment_status', 'paid_by', 'paid_date', 'amount_paid', 'updated_at'])
+            TeacherAllowance.objects.filter(
+                teacher=payroll.teacher,
+                academic_term=payroll.academic_term,
+                is_paid=False,
+            ).update(is_paid=True, paid_date=payroll.paid_date)
+
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='PAYROLL_PAID',
+            ip_address=get_client_ip(request),
+            details=f'Payroll paid id={payroll.id}.',
+        )
+        self._notify_payroll_paid(payroll)
         return Response(StaffPayrollSerializer(payroll).data)
