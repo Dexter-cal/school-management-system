@@ -47,7 +47,7 @@ Provider migration checklist
 1. Create PostgreSQL on the new provider and copy DATABASE_URL.
 2. Set SECRET_KEY, DEBUG=False, ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS if needed.
 3. Set email/SMS/mobile money/API credentials in provider environment variables.
-4. Upload or connect persistent media storage. Local Render disk is not permanent on free web services.
+4. Upload or connect persistent media storage. Many free app disks are temporary and should not store school files.
 5. Deploy, then run migrations and collectstatic.
 6. Confirm login, payments, report cards, payroll dashboard, and parent portal.
 

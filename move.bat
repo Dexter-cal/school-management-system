@@ -129,7 +129,7 @@ echo ----------------------------
 echo 1. Create PostgreSQL on the new provider and copy DATABASE_URL.
 echo 2. Set SECRET_KEY, DEBUG=False, ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS if needed.
 echo 3. Set email/SMS/mobile money/API credentials in provider environment variables.
-echo 4. Upload or connect persistent media storage. Local Render disk is not permanent on free web services.
+echo 4. Upload or connect persistent media storage. Many free app disks are temporary and should not store school files.
 echo 5. Deploy, then run migrations and collectstatic.
 echo 6. Confirm login, payments, report cards, payroll dashboard, and parent portal.
 echo.

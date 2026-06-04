@@ -181,7 +181,7 @@ if database_url:
 elif not DEBUG and not env_bool("ALLOW_SQLITE_IN_PRODUCTION", default=False):
     raise ImproperlyConfigured(
         "DATABASE_URL must be set when DEBUG=False. "
-        "Use PostgreSQL on Render or set ALLOW_SQLITE_IN_PRODUCTION=True only for a temporary test."
+        "Use a hosted PostgreSQL DATABASE_URL or set ALLOW_SQLITE_IN_PRODUCTION=True only for a temporary test."
     )
 
 

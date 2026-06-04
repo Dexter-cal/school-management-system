@@ -1,58 +1,38 @@
 Deployment and Portability Guide
 
-Quick checklist before production:
+This repo is set up to deploy on Render, Railway, DigitalOcean, Fly.io, Heroku-style platforms, Docker, or a normal VPS.
 
-- Set `SECRET_KEY` in environment (do not commit).
-- Set `DEBUG=False` in environment.
-- Use a production Postgres database and set `DATABASE_URL`.
-- Configure `BOOTSTRAP_SUPERADMIN_PASSWORD` via secrets if you enable bootstrapping.
-- If you accept file uploads in production, enable `USE_S3=True` and set AWS credentials, or configure persistent storage.
+For the full provider-neutral guide, see `DEPLOYMENT.md`.
 
-Deploy options:
+Quick production checklist:
 
-1) Render
-- Create a new Web Service using the GitHub repo.
-- Set `root` to `school-management-system`.
-- Add required secrets: `SECRET_KEY`, `DATABASE_URL` (if using managed DB), `BOOTSTRAP_SUPERADMIN_PASSWORD`, `TWILIO_*`.
-- Trigger deploy; Render will run migrations and start `gunicorn` as configured in `render.yaml`.
+- Set `SECRET_KEY` in the provider secret manager.
+- Set `DEBUG=False`.
+- Use PostgreSQL and set `DATABASE_URL`.
+- Set `ALLOWED_HOSTS` to the real domain.
+- Set `CSRF_TRUSTED_ORIGINS` for HTTPS domains that submit forms/API requests.
+- Configure persistent media storage before storing real school documents/photos.
+- Run migrations and collect static files before serving traffic.
 
-2) Docker (self-host or other providers)
-- Build and run locally with Docker Compose (Postgres included):
+Universal start command:
 
 ```bash
-docker-compose up --build
+cd school-management-system
+sh deploy-start.sh
 ```
 
-- For production, build the image and push to your container registry, then run on your host with env vars set.
+The same startup script is used by Docker, Procfile-based hosts, and Render blueprint deploys.
 
-Local startup helper
-- Windows: run `school-management-system\start.bat`.
-- Linux/macOS: run `school-management-system/start.sh`.
-- Both wrappers call `setup_env.py`, which creates the venv, installs dependencies, migrates the database, collects static files, and starts the server.
+Local Docker test:
 
-3) Heroku/Railway
-- Use `Procfile` and set environment variables in the platform dashboard.
-- Ensure you provide `DATABASE_URL` for Postgres and `SECRET_KEY`.
+```bash
+docker compose up --build
+```
 
-Portability notes
-- Use `DATABASE_URL` for DB connection; this makes swapping DB providers trivial.
-- Store secrets in the provider's secret manager rather than in repo.
-- Use Docker for the most portable deploy; the included `Dockerfile` and `docker-compose.yml` support common providers.
-- Migrate static & media:
-  - `collectstatic` is run during build/start for Docker/Render.
-  - For persistent media across hosts use S3 or another object store.
+Database switching:
 
-Reducing latency
-- Use a CDN for static assets if you expect global traffic.
-- Enable caching headers (already configured via WhiteNoise when available).
-- Use a managed Postgres close to your users.
-- Increase Gunicorn worker count for CPU-bound workloads and tune worker class for async if needed.
+- Local SQLite development: `DEBUG=True` and leave `DATABASE_URL` empty.
+- Hosted PostgreSQL: set `DATABASE_URL=postgresql://...`, `DEBUG=False`, and usually `DB_SSL_REQUIRE=True`.
+- Local Docker PostgreSQL: use the `docker-compose.yml` defaults.
 
-Rollback & updates
-- When you push to GitHub and auto-deploy is enabled the host will redeploy on new commits.
-- For manual hosts, push the image or run database migrations carefully and keep backups.
-
-If you want, I can:
-- Push these changes to GitHub now.
-- Walk through creating a Render service and setting secrets step-by-step.
-- Add GitHub Actions to build/publish Docker images automatically.
+For real school data, use paid/persistent PostgreSQL with backups. Free databases and temporary disks are useful for testing only.
