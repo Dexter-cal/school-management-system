@@ -11,6 +11,7 @@ gunicorn
 qrcode # Added for QR code generation
 whitenoise
 dj-database-url
+psycopg[binary]
 # Required for allauth/google login JWT
 cryptography
 # django-storages[boto3]  # Optional S3 storage support; enable only if you need AWS S3 and have internet access.

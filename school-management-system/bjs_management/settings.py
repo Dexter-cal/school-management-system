@@ -159,15 +159,30 @@ DATABASES = {
     }
 }
 
-# Allow overriding the DATABASE via DATABASE_URL (e.g., Render/Heroku)
+# Allow overriding the DATABASE via DATABASE_URL (Render, Railway, Fly.io,
+# Heroku, Neon, Supabase, local Postgres, or sqlite:///path/db.sqlite3).
 database_url = config("DATABASE_URL", default=None)
 if database_url:
     try:
         dj_database_url = import_module("dj_database_url")
-        DATABASES["default"] = dj_database_url.parse(database_url, conn_max_age=600)
-    except Exception:
-        # dj-database-url not installed or parse failed; fall back to sqlite.
-        pass
+        DATABASES["default"] = dj_database_url.parse(
+            database_url,
+            conn_max_age=config("DB_CONN_MAX_AGE", default=600, cast=int),
+            ssl_require=env_bool("DB_SSL_REQUIRE", default=(not DEBUG)),
+        )
+    except Exception as exc:
+        if not DEBUG:
+            raise ImproperlyConfigured(
+                "DATABASE_URL is set but could not be parsed. "
+                "Check the provider database URL and required database driver."
+            ) from exc
+        import warnings
+        warnings.warn(f"DATABASE_URL could not be parsed; falling back to local SQLite: {exc}")
+elif not DEBUG and not env_bool("ALLOW_SQLITE_IN_PRODUCTION", default=False):
+    raise ImproperlyConfigured(
+        "DATABASE_URL must be set when DEBUG=False. "
+        "Use PostgreSQL on Render or set ALLOW_SQLITE_IN_PRODUCTION=True only for a temporary test."
+    )
 
 
 # Password validation

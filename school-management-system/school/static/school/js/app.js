@@ -3786,13 +3786,28 @@ async function loadPage(page, el, label) {
                 </td>
               </tr>`;
         }).join('');
+        const historyRows = (credHistory || []).map(h => {
+            const serviceName = h.service_name || '';
+            const serviceLabel = h.credential_service_label || credServiceLabel(serviceName);
+            const ok = h.is_ok === true;
+            const result = ok ? '<span class="badge green">OK</span>' : '<span class="badge red">Failed</span>';
+            const verifiedAt = h.verified_at ? String(h.verified_at).slice(0, 19).replace('T', ' ') : '';
+            return `
+              <tr>
+                <td><strong>${escapeHtml(serviceLabel)}</strong><div class="sub mono">${escapeHtml(serviceName)}</div></td>
+                <td>${result}</td>
+                <td>${escapeHtml(verifiedAt || '-')}</td>
+                <td>${escapeHtml(h.verified_by_username || '-')}</td>
+                <td style="font-size:12px;color:var(--66);max-width:360px;white-space:normal">${escapeHtml(h.detail || '')}</td>
+              </tr>`;
+        }).join('');
 
         main.innerHTML = `
           <div class="page">
             <div class="page-hero">
               <div>
                 <div class="page-title">API Credentials</div>
-                <div class="sub">Keys are stored in the database and used by server integrations (Google login, SMS, Mobile Money, Email, AI). Only Super Admin can edit. MTN and Airtel mobile-money credentials are added here.</div>
+                <div class="sub">API keys and provider credentials are stored in the database and used by server integrations (Google login, SMS, Mobile Money, Email, AI). Only Super Admin can edit. MTN and Airtel mobile-money credentials are added here.</div>
               </div>
             </div>
 
@@ -3814,7 +3829,7 @@ async function loadPage(page, el, label) {
                     <button class="seg-btn" data-svc="email_smtp" onclick="credPick('email_smtp', this)">SMTP</button>
                     <button class="seg-btn" data-svc="megasms" onclick="credPick('megasms', this)">MegaSMS</button>
                     <button class="seg-btn" data-svc="zapier_webhook" onclick="credPick('zapier_webhook', this)">Zapier</button>
-                    <button class="seg-btn" data-svc="openai" onclick="credPick('openai', this)">AI Key</button>
+                    <button class="seg-btn" data-svc="openai" onclick="credPick('openai', this)">OpenAI API</button>
                     <button class="seg-btn" data-svc="gemini" onclick="credPick('gemini', this)">Gemini</button>
                   </div>
 
@@ -3831,7 +3846,7 @@ async function loadPage(page, el, label) {
                       <option value="email_smtp">Email SMTP</option>
                       <option value="megasms">MegaSMS Uganda (SMS)</option>
                       <option value="zapier_webhook">Zapier Webhook</option>
-                      <option value="openai">OpenAI (AI Key)</option>
+                      <option value="openai">OpenAI API Key</option>
                       <option value="gemini">Google Gemini (AI Key)</option>
                     </select>
                   </div>
@@ -4927,7 +4942,7 @@ async function loadPage(page, el, label) {
                       <input type="hidden" id="mm-purpose-${s.id}" value="${escapeHtml(paymentPurpose)}">
                       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px">
                         <div class="field" style="margin:0;min-width:180px"><label>Amount (UGX)</label><input class="field-input" id="mm-amt-${s.id}" type="number" min="0" placeholder="e.g. 50000"></div>
-                        <div class="field" style="margin:0;min-width:220px"><label>Phone number</label><input class="field-input" id="mm-phone-${s.id}" value="${escapeHtml(currentUser.username || s.parent_phone || '')}" placeholder="07XXXXXXXX or 7XXXXXXXX"></div>
+                        <div class="field" style="margin:0;min-width:220px"><label>Parent phone number</label><input class="field-input" id="mm-phone-${s.id}" value="${escapeHtml(currentUser.username || s.parent_phone || '')}" placeholder="Enter parent phone e.g. 0700000000 or 256700000000"></div>
                         <div class="field" style="margin:0;min-width:220px"><label>Provider</label>
                           <select class="field-select" id="mm-method-${s.id}">
                             <option value="mtn_momo">MTN Mobile Money</option>
@@ -8577,6 +8592,29 @@ function credServiceLabel(service_name) {
     return (CRED_SERVICE_INFO[service_name] && CRED_SERVICE_INFO[service_name].label) ? CRED_SERVICE_INFO[service_name].label : String(service_name || '');
 }
 
+function describeApiError(e, fallback = 'Request failed.') {
+    if (!e) return fallback;
+    if (typeof e === 'string') return e;
+    if (e.message) return e.message;
+    if (e.detail) return e.detail;
+
+    const parts = [];
+    Object.entries(e).forEach(([key, value]) => {
+        if (['status', 'ok'].includes(key)) return;
+        if (Array.isArray(value)) {
+            parts.push(`${key}: ${value.join(', ')}`);
+        } else if (value && typeof value === 'object') {
+            const inner = Object.entries(value)
+                .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+                .join('; ');
+            if (inner) parts.push(`${key}: ${inner}`);
+        } else if (value !== undefined && value !== null && String(value).trim()) {
+            parts.push(`${key}: ${String(value)}`);
+        }
+    });
+    return parts.join(' | ') || fallback;
+}
+
 function credPick(service_name, btn) {
     document.querySelectorAll('#cred-seg .seg-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
@@ -8682,11 +8720,15 @@ async function saveCredential() {
     try { extra_data = credCollectExtraData(); } catch (e) { flash(e && e.message ? e.message : 'Extra data invalid.'); return; }
 
     const payload = { service_name, client_id, client_secret, api_key, extra_data, is_active };
-    if (id) await API.fetch(`/api-credentials/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
-    else await API.fetch('/api-credentials/', { method: 'POST', body: JSON.stringify(payload) });
+    try {
+        if (id) await API.fetch(`/api-credentials/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+        else await API.fetch('/api-credentials/', { method: 'POST', body: JSON.stringify(payload) });
 
-    flash('Credential saved.');
-    loadPage('credentials');
+        flash('API credential saved.');
+        loadPage('credentials');
+    } catch (e) {
+        flash(describeApiError(e, 'Failed to save API credential.'));
+    }
 }
 
 async function toggleCredentialActive(id, is_active) {
@@ -8723,7 +8765,7 @@ async function verifyCredential(id) {
         try { loadPage('credentials'); } catch {}
     } catch (e) {
         const extraError = e && e.extra && (e.extra.error || e.extra.response);
-        flash(`Verify failed: ${(e && e.detail) ? e.detail : (extraError || 'Request failed')}`);
+        flash(`Verify failed: ${describeApiError(e, extraError || 'Request failed')}`);
     }
 }
 
@@ -8760,7 +8802,7 @@ async function sendTestCredentialFromForm() {
         flash(res && res.detail ? res.detail : 'Test sent.');
         try { loadPage('credentials'); } catch {}
     } catch (e) {
-        flash((e && e.detail) ? e.detail : 'Test failed.');
+        flash(describeApiError(e, 'Test failed.'));
     }
 }
 

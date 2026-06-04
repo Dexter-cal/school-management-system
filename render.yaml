@@ -1,3 +1,7 @@
+databases:
+  - name: school-management-system-db
+    plan: free
+
 services:
   - type: web
     name: school-management-system
@@ -15,6 +19,16 @@ services:
         fromSecret: SECRET_KEY
       - key: ALLOWED_HOSTS
         value: '*'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: school-management-system-db
+          property: connectionString
+      - key: DB_CONN_MAX_AGE
+        value: '600'
+      - key: DB_SSL_REQUIRE
+        value: 'True'
+      - key: ALLOW_SQLITE_IN_PRODUCTION
+        value: 'False'
       - key: BOOTSTRAP_SUPERADMIN
         value: 'False'
       - key: BOOTSTRAP_SUPERADMIN_USERNAME
