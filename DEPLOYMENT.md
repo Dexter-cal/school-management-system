@@ -88,3 +88,18 @@ Render, Railway, DigitalOcean, Fly.io, and similar platforms all work as long as
 - `SECRET_KEY`
 
 For real school data, use a paid/persistent Postgres database and configure backups.
+
+## Render Manual Deploy
+
+If you create a normal Render Web Service manually, Render does not automatically create the database from `render.yaml`.
+
+Do this in the Render dashboard:
+
+1. Create a PostgreSQL database.
+2. Copy the database internal/external connection string.
+3. Open the Web Service environment variables.
+4. Add `DATABASE_URL` with the copied PostgreSQL connection string.
+5. Add `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS=.onrender.com,your-domain.com`, `DB_SSL_REQUIRE=True`, and `ALLOW_SQLITE_IN_PRODUCTION=False`.
+6. Redeploy.
+
+If you use Render Blueprint instead, the `render.yaml` can create and link the database automatically.

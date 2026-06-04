@@ -8,6 +8,13 @@ echo Starting portable Django deployment...
 echo Port: %PORT%
 echo Workers: %WEB_CONCURRENCY%
 
+if /I not "%DEBUG%"=="True" if not "%DEBUG%"=="1" if "%DATABASE_URL%"=="" if /I not "%ALLOW_SQLITE_IN_PRODUCTION%"=="True" (
+    echo ERROR: DATABASE_URL is missing while DEBUG=False.
+    echo Create a PostgreSQL database on your host, then set DATABASE_URL to its connection string.
+    echo For a temporary test only, you can set ALLOW_SQLITE_IN_PRODUCTION=True, but hosted SQLite data is not safe for real school use.
+    exit /b 1
+)
+
 if /I not "%SKIP_MIGRATIONS%"=="True" (
     echo Applying database migrations...
     python manage.py migrate --noinput
