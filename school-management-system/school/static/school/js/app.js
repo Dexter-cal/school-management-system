@@ -2966,7 +2966,7 @@ async function loadPage(page, el, label) {
                 <div class="page-hero"><div class="page-title">AI Tools</div></div>
                 <div class="card" style="border-left:4px solid var(--or)"><div class="card-body">
                   <strong>AI Tools are not available.</strong>
-                  <div class="sub" style="margin-top:6px">Super Admin must enable AI Tools and verify an AI key (OpenAI or Gemini).</div>
+                  <div class="sub" style="margin-top:6px">Super Admin must enable AI Tools and verify an AI provider API key (OpenAI or Gemini) in API Credentials.</div>
                 </div></div>
               </div>`;
             return;
@@ -5505,7 +5505,7 @@ async function loadPage(page, el, label) {
                     <div class="ri-end"><label class="tog"><input type="checkbox" id="ss-fee-sms" ${send_fee_reminder_sms ? 'checked' : ''}><div class="tog-sl"></div></label></div>
                   </div>
                   <div class="ri">
-                    <div class="ri-info"><div class="rn">Enable AI Tools (Teachers)</div><div class="rd">Allows teachers to generate drafts (tests/exams/notes) if a verified AI key exists</div></div>
+                    <div class="ri-info"><div class="rn">Enable AI Tools (Teachers)</div><div class="rd">Allows teachers to generate drafts (tests/exams/notes) if a verified OpenAI or Gemini API key exists</div></div>
                     <div class="ri-end"><label class="tog"><input type="checkbox" id="ss-ai" ${ai_tools_enabled ? 'checked' : ''}><div class="tog-sl"></div></label></div>
                   </div>
                   <div style="height:12px"></div>
