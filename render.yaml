@@ -11,7 +11,7 @@ services:
     branch: master
     autoDeploy: true
     buildCommand: pip install -r requirements.txt
-    startCommand: python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py bootstrap_superadmin && gunicorn bjs_management.wsgi:application --bind 0.0.0.0:$PORT --workers 3
+    startCommand: sh deploy-start.sh
     envVars:
       - key: DEBUG
         value: 'False'

@@ -7,10 +7,17 @@ services:
     environment:
       SECRET_KEY: "changeme"
       DEBUG: "1"
+      DATABASE_URL: "postgresql://bjsuser:bjspassword@db:5432/bjsdb"
+      DB_SSL_REQUIRE: "False"
+      ALLOW_SQLITE_IN_PRODUCTION: "False"
+      PORT: "8000"
     volumes:
       - .:/app
     working_dir: /app/school-management-system
-    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn bjs_management.wsgi:application -b 0.0.0.0:8000 --workers 3"
+    command: sh deploy-start.sh
+    depends_on:
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:15
