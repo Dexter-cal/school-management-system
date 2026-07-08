@@ -1098,7 +1098,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener('error', (ev) => {
         try {
             const msg = (ev && ev.message) ? ev.message : 'Unexpected error';
-            setLoginError('UI error: ' + msg);
+            setLoginError('Application error: ' + msg + '. Please refresh or contact support.');
             showLoginScreen();
         } catch {}
     });
@@ -1106,7 +1106,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const r = ev && ev.reason ? ev.reason : null;
             const msg = (r && (r.detail || r.message)) ? (r.detail || r.message) : 'Unexpected error';
-            setLoginError('UI error: ' + msg);
+            setLoginError('Application error: ' + msg + '. Please refresh or contact support.');
             showLoginScreen();
         } catch {}
     });
@@ -1135,6 +1135,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentUser = await withTimeout(API.fetch('/auth/me/'), 10000);
         enterApp();
     } catch (e) {
+        if (e && (e.detail || e.status)) {
+            const msg = e.detail || ('HTTP ' + e.status);
+            setLoginError('Startup check failed: ' + msg);
+        }
         showLoginScreen();
     }
 
@@ -1181,7 +1185,7 @@ async function doLogin() {
         let msg = 'Login failed.';
         if (e && e.detail) msg = e.detail;
         else if (e && e.status) msg = e.status;
-        setLoginError(msg + ' (Tip: use only one address: either http://127.0.0.1:8000 or http://localhost:8000, not both)');
+        setLoginError(msg);
     } finally {
         const btn = document.getElementById('login-btn');
         if (btn) { btn.disabled = false; btn.textContent = 'Sign In ->'; }
