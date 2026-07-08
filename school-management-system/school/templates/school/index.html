@@ -112,8 +112,8 @@ body[data-boot="app"] #login-screen{display:none!important;opacity:0!important;p
 body[data-boot="app"] #splash{display:none!important}
 
 /* Hard fallback if JS never runs: after 4s, hide splash and reveal login */
-body:not([data-boot]) #splash{animation:splashAutoHide 0.01s linear 4s forwards}
-body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forwards}
+body:not([data-boot]) #splash{animation:splashAutoHide 0.01s linear 10s forwards}
+body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 10s forwards}
 @keyframes splashAutoHide{to{opacity:0;visibility:hidden;pointer-events:none}}
 @keyframes loginAutoShow{to{opacity:1;pointer-events:auto}}
 .login-card {

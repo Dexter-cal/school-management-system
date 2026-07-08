@@ -1081,7 +1081,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try { await API.flushOfflineQueue(); } catch {} 
  
     const showLoginScreen = () => { 
-        try { document.body.dataset.boot = 'login'; } catch {} 
+        try { document.body.setAttribute("data-boot", "login"); } catch {}
         // Never block the UI on an API call: if session-check is slow/down, show login anyway.
         setTimeout(() => {
             const sp = document.getElementById('splash');
@@ -1126,13 +1126,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const splashVisible = sp && sp.style.display !== 'none';
         const appShown = app && app.classList.contains('show');
         const loginShown = ls && ls.classList.contains('show');
-        if (splashVisible && !appShown && !loginShown) showLoginScreen();
-    }, 3500);
+        if (splashVisible && !appShown && !loginShown) { console.warn("Failsafe: forcing login screen after timeout"); showLoginScreen(); }
+    }, 10000);
 
     try {
         // If the backend is still starting/migrating, this can hang for a while in some browsers.
         // Timeout keeps the splash from getting stuck forever.
-        currentUser = await withTimeout(API.fetch('/auth/me/'), 2000);
+        currentUser = await withTimeout(API.fetch('/auth/me/'), 10000);
         enterApp();
     } catch (e) {
         showLoginScreen();
@@ -1245,7 +1245,7 @@ async function confirmPasswordReset() {
 function doLogout() { API.fetch('/auth/logout/', { method: 'POST' }).then(() => location.reload()); }
 
 function enterApp() {
-    try { document.body.dataset.boot = 'app'; } catch {}
+    try { document.body.setAttribute("data-boot", "app"); } catch {}
     
     try {
         document.getElementById('login-screen').classList.remove('show');
@@ -1282,7 +1282,7 @@ function enterApp() {
     refreshTermChip();
     maybeHandleTeacherQR();
     refreshNotificationsBadge();
-    setTimeout(() => { try { maybeOpenFirstLoginTutorial(); } catch {} }, 250);
+    setTimeout(() => { try { maybeOpenFirstLoginTutorial(); } catch {} }, 1000);
 
     try {
         if (currentUser && currentUser.profile && currentUser.profile.must_change_password) {
