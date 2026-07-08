@@ -28,10 +28,10 @@ jobs:
       - name: Run Django checks
         working-directory: school-management-system
         run: |
-          python manage.py check --deploy || true
-          python manage.py check
+          DEBUG=True SECRET_KEY=ci-secret-key python manage.py check --deploy || true
+          DEBUG=True SECRET_KEY=ci-secret-key python manage.py check
 
       - name: Validate static files collection
         working-directory: school-management-system
         run: |
-          python manage.py collectstatic --noinput
+          DEBUG=True SECRET_KEY=ci-secret-key python manage.py collectstatic --noinput

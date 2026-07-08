@@ -267,6 +267,7 @@ CORS_ALLOWED_ORIGINS = config(
 # Security defaults (tighten automatically when DEBUG=False)
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
 SECURE_REFERRER_POLICY = "same-origin"
 CSRF_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SAMESITE = "Lax"
@@ -373,7 +374,7 @@ ACCOUNT_LOGOUT_REDIRECT_URL = '/' # Redirect to home page after logout
 
 # Allauth settings (modern)
 # `ACCOUNT_LOGIN_METHODS` is the replacement for the deprecated login settings.
-ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_LOGIN_METHODS = {'email', 'username'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional' # or 'mandatory' for strict verification
 
