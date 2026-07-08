@@ -17,9 +17,12 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 .env
+LOCAL_*.md
+*_PRIVATE.md
 media/
 staticfiles/
 exports/
+school-management-system/school/settings.py
 
 # Node
 node_modules/
