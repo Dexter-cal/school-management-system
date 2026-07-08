@@ -373,7 +373,7 @@ ACCOUNT_LOGOUT_REDIRECT_URL = '/' # Redirect to home page after logout
 
 # Allauth settings (modern)
 # `ACCOUNT_LOGIN_METHODS` is the replacement for the deprecated login settings.
-ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_LOGIN_METHODS = {'email', 'username'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional' # or 'mandatory' for strict verification
 
