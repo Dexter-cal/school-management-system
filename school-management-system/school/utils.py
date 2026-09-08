@@ -434,7 +434,7 @@ def generate_payment_receipt_pdf(payment, school_name="Bitende Junior School"):
     row("Date", received_at.strftime('%Y-%m-%d %H:%M') if received_at else "-")
     row("Student", f"{getattr(stu, 'first_name', '')} {getattr(stu, 'last_name', '')}".strip() if stu else "-")
     row("Student ID", getattr(stu, 'student_id', None) if stu else "-")
-    row("Amount (UGX)", getattr(payment, 'amount', None))
+    row("Amount (UGX)", f"UGX {float(payment.amount):,.2f}" if getattr(payment, 'amount', None) is not None else "-")
     row("Method", getattr(payment, 'method', None))
     row("Reference", getattr(payment, 'reference', None))
     row("Status", getattr(payment, 'status', None))

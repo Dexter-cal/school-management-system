@@ -8365,6 +8365,30 @@ class AIToolsViewSet(viewsets.ViewSet):
 
 
 class SecurityAdminViewSet(viewsets.ViewSet):
+    @action(detail=False, methods=['get'], url_path='export-backup')
+    def export_backup(self, request):
+        settings_data = list(SystemSetting.objects.all().values('key', 'value'))
+        classes_data = list(SchoolClass.objects.all().values('id', 'level', 'annual_fee', 'max_students_per_section'))
+        subjects_data = list(Subject.objects.all().values('id', 'name', 'code', 'description'))
+        terms_data = list(AcademicTerm.objects.all().values('id', 'academic_year', 'term_number', 'start_date', 'end_date'))
+
+        backup = {
+            'exported_at': timezone.now().isoformat(),
+            'exported_by': request.user.username,
+            'settings': settings_data,
+            'classes': classes_data,
+            'subjects': subjects_data,
+            'terms': terms_data,
+        }
+
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='SYSTEM_BACKUP_EXPORTED',
+            ip_address=get_client_ip(request),
+            details='Exported JSON system backup.',
+        )
+        return Response(backup, status=status.HTTP_200_OK)
+
     """
     Super Admin security dashboard endpoints.
     """
