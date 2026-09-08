@@ -6293,6 +6293,13 @@ class APICredentialViewSet(viewsets.ModelViewSet):
                 return nested.get('access_token') or nested.get('token')
             return data.get('token')
 
+        try:
+            return self._perform_verification(request, cred, svc, ok, bad, parse_json_response, extract_access_token)
+        except Exception as e:
+            logger.exception('API credential verification exception for %s', svc)
+            return bad(f'Verification failed due to an error: {e}', {'error': str(e)}, code=status.HTTP_400_BAD_REQUEST)
+
+    def _perform_verification(self, request, cred, svc, ok, bad, parse_json_response, extract_access_token):
         # Field presence checks first.
         if svc == 'google_oauth':
             if not cred.client_id or not cred.client_secret:

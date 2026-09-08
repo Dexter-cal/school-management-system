@@ -971,8 +971,12 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
     def get_teacher_name(self, obj):
-        if obj.teacher and obj.teacher.user:
-            return obj.teacher.user.get_full_name()
+        if obj.teacher:
+            name = f"{obj.teacher.first_name} {obj.teacher.last_name}".strip()
+            if name:
+                return name
+            if obj.teacher.user:
+                return obj.teacher.user.get_full_name() or obj.teacher.user.username
         return "N/A"
 
 
@@ -987,8 +991,12 @@ class TeacherAllowanceSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
     def get_teacher_name(self, obj):
-        if obj.teacher and obj.teacher.user:
-            return obj.teacher.user.get_full_name()
+        if obj.teacher:
+            name = f"{obj.teacher.first_name} {obj.teacher.last_name}".strip()
+            if name:
+                return name
+            if obj.teacher.user:
+                return obj.teacher.user.get_full_name() or obj.teacher.user.username
         return "N/A"
 
 
@@ -1014,8 +1022,12 @@ class StaffPayrollSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
     def get_teacher_name(self, obj):
-        if obj.teacher and obj.teacher.user:
-            return obj.teacher.user.get_full_name()
+        if obj.teacher:
+            name = f"{obj.teacher.first_name} {obj.teacher.last_name}".strip()
+            if name:
+                return name
+            if obj.teacher.user:
+                return obj.teacher.user.get_full_name() or obj.teacher.user.username
         return None
 
     def get_other_staff_name(self, obj):
