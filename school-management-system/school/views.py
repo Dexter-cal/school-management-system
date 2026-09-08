@@ -11,7 +11,8 @@ from django.db import transaction, IntegrityError # Added for atomic operations 
 from datetime import date, timedelta, datetime # Added for date and time operations
 from django.utils import timezone # Added for timezone awareness
 
-from .models import ( 
+from .models import (
+    ChatMessage,
     SchoolClass, Subject, ClassSubject, DocumentDraft, Teacher, Student, FeeStructure, Mark, Attendance, Timetable, UserProfile, 
     AcademicTerm, PromotionAudit, AlumniRegister, OTP, IDCounter, GradingScale, UserSession, SecurityAuditLog, 
     APICredential, APICredentialHealthLog, Payment, Invoice, ClassCharge, Event, SystemSetting, TeacherAttendance, TeacherAttendanceQRToken, 
@@ -21,7 +22,8 @@ from .models import (
     ExamType, AcademicCalendarEvent, TermInstallmentPlan, StudentDebtRecord, TeacherSalary, TeacherAllowance,
     OtherStaff, StaffPayroll
 ) 
-from .serializers import ( 
+from .serializers import (
+    ChatMessageSerializer,
     SchoolClassSerializer, SubjectSerializer, ClassSubjectSerializer, DocumentDraftSerializer, TeacherSerializer, StudentSerializer, 
     FeeStructureSerializer, MarkSerializer, AttendanceSerializer, 
     TimetableSerializer, UserSerializer, AcademicTermSerializer, 
@@ -40,7 +42,7 @@ from .serializers import (
 ) 
 from .utils import (
     generate_graduation_certificate_pdf, send_sms, generate_random_password, generate_otp,
-    send_email, generate_teacher_credential_pdf, generate_staff_credential_pdf, generate_parent_credential_pdf,
+    send_email, generate_teacher_credential_pdf, generate_teacher_appointment_letter_pdf, generate_staff_credential_pdf, generate_parent_credential_pdf,
     generate_family_credential_pdf,
     generate_student_credential_pdf, generate_admission_letter_pdf,
     generate_report_card_pdf, generate_payment_receipt_pdf, generate_fee_statement_pdf,
@@ -60,6 +62,7 @@ from django.utils.dateparse import parse_datetime
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from .validators import validate_phone_number
 from django.http import FileResponse
 import secrets
 from django.utils.decorators import method_decorator
@@ -2218,6 +2221,28 @@ class TeacherViewSet(viewsets.ModelViewSet):
             }
             return Response(data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['get'], url_path='print-appointment-letter')
+    def print_appointment_letter(self, request, pk=None):
+        role = get_role(request.user)
+        if not (role == 'superadmin' or is_admin_role(role) or role in ['reception']):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        teacher = self.get_object()
+        token = request.query_params.get('token')
+        payload = _get_handover_payload('teacher', teacher.id, token)
+        if not payload:
+            return Response({'detail': 'Handover token missing or expired. Re-generate credentials to print.'}, status=status.HTTP_400_BAD_REQUEST)
+        base_salary = TeacherSalary.objects.filter(teacher=teacher).values_list('base_salary', flat=True).first()
+        pdf_buffer = generate_teacher_appointment_letter_pdf(
+            teacher,
+            payload.get('username'),
+            payload.get('password'),
+            payload.get('login_url'),
+            base_salary=base_salary,
+            employment_type=teacher.employment_type,
+        )
+        fn = f"teacher_appointment_letter_${teacher.employee_id or teacher.id}.pdf".replace('$', '')
+        return FileResponse(pdf_buffer, as_attachment=False, filename=fn, content_type='application/pdf')
+
     @action(detail=True, methods=['get'], url_path='print-credentials') 
     def print_credentials(self, request, pk=None): 
         role = get_role(request.user)
@@ -4163,14 +4188,26 @@ class UserViewSet(viewsets.ModelViewSet):
         phone_number = (request.data.get('phone_number') or '').strip() or None
         email_address = (request.data.get('email_address') or '').strip().lower() or None
 
-        if role in ['student', 'parent']:
-            return Response({'detail': "Create student/parent accounts via Students registration (it auto-creates portals)."}, status=status.HTTP_400_BAD_REQUEST)
+        if email_address:
+            try:
+                validate_email(email_address)
+            except ValidationError:
+                return Response({'detail': 'Enter a valid email address.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if phone_number:
+            try:
+                validate_phone_number(phone_number)
+            except ValidationError as e:
+                return Response({'detail': str(e.message if hasattr(e, 'message') else e)}, status=status.HTTP_400_BAD_REQUEST)
 
         if not username:
-            username = _unique_username(
-                _recommended_username(first_name=first_name, last_name=last_name, role=role),
-                fallback=role or 'user',
-            )
+            if role == 'parent' and phone_number:
+                username = phone_number
+            else:
+                username = _unique_username(
+                    _recommended_username(first_name=first_name, last_name=last_name, role=role),
+                    fallback=role or 'user',
+                )
 
         generated_password = None
         if auto_password:
@@ -6125,10 +6162,16 @@ class GradingScaleViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, CanManageGrading]
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        with transaction.atomic():
+            if serializer.validated_data.get('is_default'):
+                GradingScale.objects.update(is_default=False)
+            serializer.save(created_by=self.request.user)
 
     def perform_update(self, serializer):
-        serializer.save()
+        with transaction.atomic():
+            if serializer.validated_data.get('is_default'):
+                GradingScale.objects.exclude(id=serializer.instance.id).update(is_default=False)
+            serializer.save()
 
     @action(detail=False, methods=['post'], url_path='set-default')
     def set_default_grading_scale(self, request):
@@ -6293,6 +6336,13 @@ class APICredentialViewSet(viewsets.ModelViewSet):
                 return nested.get('access_token') or nested.get('token')
             return data.get('token')
 
+        try:
+            return self._perform_verification(request, cred, svc, ok, bad, parse_json_response, extract_access_token)
+        except Exception as e:
+            logger.exception('API credential verification exception for %s', svc)
+            return bad(f'Verification failed due to an error: {e}', {'error': str(e)}, code=status.HTTP_400_BAD_REQUEST)
+
+    def _perform_verification(self, request, cred, svc, ok, bad, parse_json_response, extract_access_token):
         # Field presence checks first.
         if svc == 'google_oauth':
             if not cred.client_id or not cred.client_secret:
@@ -8315,6 +8365,30 @@ class AIToolsViewSet(viewsets.ViewSet):
 
 
 class SecurityAdminViewSet(viewsets.ViewSet):
+    @action(detail=False, methods=['get'], url_path='export-backup')
+    def export_backup(self, request):
+        settings_data = list(SystemSetting.objects.all().values('key', 'value'))
+        classes_data = list(SchoolClass.objects.all().values('id', 'level', 'annual_fee', 'max_students_per_section'))
+        subjects_data = list(Subject.objects.all().values('id', 'name', 'code', 'description'))
+        terms_data = list(AcademicTerm.objects.all().values('id', 'academic_year', 'term_number', 'start_date', 'end_date'))
+
+        backup = {
+            'exported_at': timezone.now().isoformat(),
+            'exported_by': request.user.username,
+            'settings': settings_data,
+            'classes': classes_data,
+            'subjects': subjects_data,
+            'terms': terms_data,
+        }
+
+        SecurityAuditLog.objects.create(
+            user=request.user,
+            event_type='SYSTEM_BACKUP_EXPORTED',
+            ip_address=get_client_ip(request),
+            details='Exported JSON system backup.',
+        )
+        return Response(backup, status=status.HTTP_200_OK)
+
     """
     Super Admin security dashboard endpoints.
     """
@@ -11501,3 +11575,61 @@ class StaffPayrollViewSet(viewsets.ModelViewSet):
         )
         self._notify_payroll_paid(payroll)
         return Response(StaffPayrollSerializer(payroll).data)
+
+
+class ChatMessageViewSet(viewsets.ModelViewSet):
+    queryset = ChatMessage.objects.select_related('sender', 'sender__profile', 'recipient', 'recipient__profile').all()
+    serializer_class = ChatMessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = super().get_queryset()
+        room = (self.request.query_params.get('room') or '').strip()
+        recipient_id = (self.request.query_params.get('recipient') or '').strip()
+
+        if room:
+            return qs.filter(room=room)
+        if recipient_id.isdigit():
+            other_id = int(recipient_id)
+            return qs.filter(
+                (Q(sender=user) & Q(recipient_id=other_id)) |
+                (Q(sender_id=other_id) & Q(recipient=user))
+            )
+        return qs.filter(Q(sender=user) | Q(recipient=user) | Q(room__isnull=False)).order_by('-created_at')[:100]
+
+    def perform_create(self, serializer):
+        msg = serializer.save(sender=self.request.user)
+        if msg.recipient:
+            try:
+                notify_user(
+                    msg.recipient,
+                    category='system',
+                    title=f"New chat message from {self.request.user.first_name or self.request.user.username}",
+                    message=msg.message[:100],
+                    link_page='chat',
+                    meta={'chat_message_id': msg.id, 'sender_id': self.request.user.id},
+                )
+            except Exception:
+                pass
+
+    @action(detail=False, methods=['get'], url_path='contacts')
+    def contacts(self, request):
+        user = request.user
+        role = get_role(user)
+        users = User.objects.select_related('profile').filter(is_active=True).exclude(id=user.id)
+        if role == 'parent':
+            users = users.filter(profile__role__in=['teacher', 'admin', 'superadmin', 'headteacher', 'dos', 'bursar'])
+        elif role == 'student':
+            users = users.filter(profile__role__in=['teacher', 'admin', 'superadmin', 'headteacher', 'dos'])
+
+        data = []
+        for u in users[:50]:
+            name = f"{u.first_name} {u.last_name}".strip() or u.username
+            data.append({
+                'id': u.id,
+                'username': u.username,
+                'name': name,
+                'role': getattr(getattr(u, 'profile', None), 'role', 'user'),
+            })
+        return Response(data)

@@ -3526,6 +3526,84 @@ async function loadPage(page, el, label) {
         }
 
         main.innerHTML = `<div class="page"><div class="card"><div class="card-body">You do not have access to this page.</div></div></div>`;
+    } else if (page === 'chat') {
+        const [contacts, messages] = await Promise.all([
+            API.fetch('/chat-messages/contacts/').catch(() => []),
+            API.fetch('/chat-messages/').catch(() => [])
+        ]);
+
+        let activeContactId = (contacts[0] && contacts[0].id) ? contacts[0].id : null;
+
+        const renderChatPage = (selectedId) => {
+            const selectedUser = contacts.find(c => c.id == selectedId) || contacts[0] || { name: 'Chat', id: null };
+            activeContactId = selectedUser.id;
+
+            const contactRows = contacts.map(c => `
+              <div class="ri" style="cursor:pointer;padding:10px 12px;border-radius:8px;background:${c.id == activeContactId ? 'var(--mll2)' : 'transparent'}" onclick="window.switchChatContact(${c.id})">
+                <div class="av av-sm r" style="font-weight:700">${escapeHtml((c.name || 'U').substring(0, 2).toUpperCase())}</div>
+                <div class="ri-info">
+                  <div class="rn">${escapeHtml(c.name || 'User')}</div>
+                  <div class="rd" style="text-transform:capitalize">${escapeHtml(c.role || 'user')}</div>
+                </div>
+              </div>
+            `).join('') || '<div class="sub" style="padding:10px">No contacts found</div>';
+
+            const filteredMsgs = (messages || []).filter(m => (m.sender == activeContactId || m.recipient == activeContactId || (m.sender == currentUser.id && m.recipient == activeContactId)));
+            filteredMsgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            const msgRows = filteredMsgs.map(m => {
+                const isMe = m.sender == currentUser.id;
+                return `
+                  <div style="display:flex;justify-content:${isMe ? 'flex-end' : 'flex-start'};margin-bottom:10px">
+                    <div style="max-width:70%;padding:10px 14px;border-radius:12px;background:${isMe ? 'var(--m)' : 'var(--f0)'};color:${isMe ? '#fff' : 'var(--1a)'}">
+                      <div style="font-size:11px;font-weight:700;margin-bottom:2px;opacity:0.8">${escapeHtml(isMe ? 'You' : (m.sender_full_name || m.sender_username))}</div>
+                      <div style="font-size:13px;white-space:pre-wrap">${escapeHtml(m.message || '')}</div>
+                      <div style="font-size:10px;margin-top:4px;opacity:0.6;text-align:right">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                    </div>
+                  </div>
+                `;
+            }).join('') || '<div class="sub" style="text-align:center;padding:30px">No messages yet. Send a message to start chatting!</div>';
+
+            main.innerHTML = `
+              <div class="page">
+                <div class="ph"><div class="ph-title">Chat & In-App Messaging</div><div class="ph-sub">Connect with teachers, school administrators, and parents</div></div>
+                <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;min-height:540px">
+                  <div class="card"><div class="card-h"><div class="card-t">Contacts</div></div><div class="card-b np"><div style="display:flex;flex-direction:column;padding:8px">${contactRows}</div></div></div>
+                  <div class="card" style="display:flex;flex-direction:column">
+                    <div class="card-h"><div class="card-t">${escapeHtml(selectedUser.name || 'Chat')}</div></div>
+                    <div class="card-b" id="chat-box-body" style="flex:1;overflow-y:auto;max-height:420px;padding:16px">${msgRows}</div>
+                    <div style="padding:12px 16px;border-top:1px solid var(--f0);display:flex;gap:10px">
+                      <input class="fin2" id="chat-input-msg" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendChatMessage(${activeContactId})">
+                      <button class="btn btn-p" onclick="sendChatMessage(${activeContactId})">Send</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+            const box = document.getElementById('chat-box-body');
+            if (box) box.scrollTop = box.scrollHeight;
+        };
+
+        window.switchChatContact = (id) => renderChatPage(id);
+        window.sendChatMessage = async (recipientId) => {
+            const input = document.getElementById('chat-input-msg');
+            const msg = (input ? input.value : '').trim();
+            if (!msg || !recipientId) return;
+            try {
+                const newMsg = await API.fetch('/chat-messages/', {
+                    method: 'POST',
+                    body: JSON.stringify({ recipient: recipientId, message: msg })
+                });
+                messages.push(newMsg);
+                if (input) input.value = '';
+                renderChatPage(recipientId);
+            } catch (e) {
+                flash((e && e.detail) ? e.detail : 'Failed to send message.');
+            }
+        };
+
+        renderChatPage(activeContactId);
+
     } else if (page === 'announcements') {
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
         const canEdit = ['superadmin', 'admin', 'reception'].includes(role);
@@ -7606,6 +7684,8 @@ async function submitPaymentProof(studentId, academicYear, termNumber, method, p
     }
 }
 
+let mobilePollInterval = null;
+
 async function startMobilePayment(studentId, academicYear, termNumber) {
     const amount = Number(document.getElementById(`mm-amt-${studentId}`)?.value || 0);
     const method = (document.getElementById(`mm-method-${studentId}`)?.value || 'mtn_momo').trim();
@@ -7628,11 +7708,91 @@ async function startMobilePayment(studentId, academicYear, termNumber) {
                 purpose,
             })
         });
-        flash((res && res.detail) ? `${res.detail} Paying for ${studentLabel || 'the selected student'}.` : 'Mobile payment request sent.');
-        loadPage('my_fees', null, 'Fees & Payments');
+
+        const paymentObj = (res && res.payment) ? res.payment : { id: res.id, amount, phone_number, method };
+        showMobilePaymentModal(paymentObj, studentLabel);
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Failed to start mobile payment.');
     }
+}
+
+function showMobilePaymentModal(payment, studentLabel) {
+    if (mobilePollInterval) clearInterval(mobilePollInterval);
+
+    let modal = document.getElementById('modal-mobile-prompt');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-mobile-prompt';
+        modal.className = 'mov show';
+        document.body.appendChild(modal);
+    }
+
+    const methodLabel = (payment.method === 'airtel_money') ? 'Airtel Money' : 'MTN Mobile Money';
+    const paymentId = payment.id;
+
+    modal.innerHTML = `
+      <div class="modal" style="max-width:480px;text-align:center;padding:24px">
+        <div style="font-size:36px;margin-bottom:8px">📲</div>
+        <div style="font-size:18px;font-weight:800;color:var(--1a);margin-bottom:8px">USSD PIN Prompt Sent</div>
+        <div style="font-size:13px;color:var(--66);margin-bottom:16px;line-height:1.5">
+          A prompt has been sent to <strong>${escapeHtml(payment.phone_number || '')}</strong> via ${methodLabel}.<br>
+          Please check your phone screen and <strong>enter your Mobile Money PIN</strong> to authorize payment of <strong>UGX ${Number(payment.amount || 0).toLocaleString()}</strong>.
+        </div>
+        <div id="mm-poll-status" style="padding:12px;border-radius:10px;background:var(--f0);font-size:13px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px">
+          <span style="font-size:13px">⏳</span>
+          <span>Waiting for PIN entry on phone...</span>
+        </div>
+        <button class="btn btn-ghost" onclick="closeMobilePaymentModal()">Cancel / Close</button>
+      </div>
+    `;
+    modal.classList.add('show');
+
+    let attempts = 0;
+    mobilePollInterval = setInterval(async () => {
+        attempts++;
+        if (attempts > 20) {
+            clearInterval(mobilePollInterval);
+            const statusEl = document.getElementById('mm-poll-status');
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--or)">⚠️ Request timed out. If you entered your PIN, refresh page to see updated balance.</span>';
+            return;
+        }
+        try {
+            const syncRes = await API.fetch('/payment-submissions/mobile-sync/', {
+                method: 'POST',
+                body: JSON.stringify({ payment: paymentId })
+            });
+            const st = (syncRes && syncRes.status) ? syncRes.status : '';
+            const statusEl = document.getElementById('mm-poll-status');
+            if (st === 'received' || st === 'approved') {
+                clearInterval(mobilePollInterval);
+                if (statusEl) {
+                    statusEl.style.background = 'var(--grl)';
+                    statusEl.style.color = 'var(--gr)';
+                    statusEl.innerHTML = '✅ Payment Received! Refreshing account balance...';
+                }
+                setTimeout(() => {
+                    closeMobilePaymentModal();
+                    flash('Payment completed successfully!');
+                    loadPage('my_fees', null, 'Fees & Payments');
+                }, 1800);
+            } else if (st === 'rejected' || st === 'failed') {
+                clearInterval(mobilePollInterval);
+                if (statusEl) {
+                    statusEl.style.background = 'var(--rdl)';
+                    statusEl.style.color = 'var(--rd)';
+                    statusEl.innerHTML = '❌ Payment Failed or Cancelled (check balance or PIN).';
+                }
+            }
+        } catch (err) {
+            // keep polling
+        }
+    }, 3500);
+}
+
+function closeMobilePaymentModal() {
+    if (mobilePollInterval) clearInterval(mobilePollInterval);
+    const modal = document.getElementById('modal-mobile-prompt');
+    if (modal) modal.remove();
 }
 
 async function toggleAdjustmentActive(id, isActive) {
@@ -8287,7 +8447,7 @@ function gradingValidation(rows) {
     if (!normalized.length) return { ok: false, messages: ['Add at least one grading band.'], normalized };
     const messages = [];
     const seen = new Set();
-    let expected = 0;
+    let prevMax = 0;
     normalized.forEach((row, idx) => {
         if (!row.grade) messages.push(`Band ${idx + 1} needs a grade.`);
         if (row.min_score < 0 || row.max_score > 100) messages.push(`${gradingRowPreview(row)} must stay inside 0-100.`);
@@ -8297,15 +8457,57 @@ function gradingValidation(rows) {
             if (seen.has(key)) messages.push(`Grade ${row.grade} is duplicated.`);
             seen.add(key);
         }
-        if (row.min_score !== expected) {
-            if (row.min_score < expected) messages.push(`${gradingRowPreview(row)} overlaps another band.`);
-            else messages.push(`There is a gap before ${gradingRowPreview(row)}.`);
+        if (idx > 0) {
+            if (row.min_score < prevMax) messages.push(`${gradingRowPreview(row)} overlaps another band.`);
+            else if (row.min_score > prevMax + 1) messages.push(`There is a gap before ${gradingRowPreview(row)}.`);
         }
-        expected = row.max_score + 1;
+        prevMax = row.max_score;
     });
     if (normalized[0].min_score !== 0) messages.push('The first band should start at 0.');
     if (normalized[normalized.length - 1].max_score !== 100) messages.push('The last band should end at 100.');
     return { ok: messages.length === 0, messages, normalized };
+}
+
+function loadGradingPreset(type) {
+    if (type === '5grade') {
+        GRADING_ROWS = [
+            { grade: 'F', min_score: 0, max_score: 59, gpa_points: 0, status: 'Fail', implication: 'Repeat' },
+            { grade: 'D', min_score: 60, max_score: 69, gpa_points: 1, status: 'Pass', implication: 'Needs Improvement' },
+            { grade: 'C', min_score: 70, max_score: 79, gpa_points: 2, status: 'Pass', implication: 'Satisfactory' },
+            { grade: 'B', min_score: 80, max_score: 89, gpa_points: 3, status: 'Pass', implication: 'Good' },
+            { grade: 'A', min_score: 90, max_score: 100, gpa_points: 4, status: 'Pass', implication: 'Excellent' }
+        ];
+    } else if (type === 'uneb') {
+        GRADING_ROWS = [
+            { grade: 'F9', min_score: 0, max_score: 39, gpa_points: 9, status: 'Fail', implication: 'Fail' },
+            { grade: 'P8', min_score: 40, max_score: 44, gpa_points: 8, status: 'Pass', implication: 'Pass' },
+            { grade: 'P7', min_score: 45, max_score: 49, gpa_points: 7, status: 'Pass', implication: 'Pass' },
+            { grade: 'C6', min_score: 50, max_score: 54, gpa_points: 6, status: 'Pass', implication: 'Credit' },
+            { grade: 'C5', min_score: 55, max_score: 59, gpa_points: 5, status: 'Pass', implication: 'Credit' },
+            { grade: 'C4', min_score: 60, max_score: 69, gpa_points: 4, status: 'Pass', implication: 'Credit' },
+            { grade: 'C3', min_score: 70, max_score: 79, gpa_points: 3, status: 'Pass', implication: 'Credit' },
+            { grade: 'D2', min_score: 80, max_score: 89, gpa_points: 2, status: 'Pass', implication: 'Distinction' },
+            { grade: 'D1', min_score: 90, max_score: 100, gpa_points: 1, status: 'Pass', implication: 'Distinction' }
+        ];
+    } else if (type === '13grade') {
+        GRADING_ROWS = [
+            { grade: 'F', min_score: 0, max_score: 59, gpa_points: 0, status: 'Fail', implication: 'Fail' },
+            { grade: 'D-', min_score: 60, max_score: 62, gpa_points: 0.7, status: 'Pass', implication: 'Pass' },
+            { grade: 'D', min_score: 63, max_score: 66, gpa_points: 1.0, status: 'Pass', implication: 'Pass' },
+            { grade: 'D+', min_score: 67, max_score: 69, gpa_points: 1.3, status: 'Pass', implication: 'Pass' },
+            { grade: 'C-', min_score: 70, max_score: 72, gpa_points: 1.7, status: 'Pass', implication: 'Satisfactory' },
+            { grade: 'C', min_score: 73, max_score: 76, gpa_points: 2.0, status: 'Pass', implication: 'Satisfactory' },
+            { grade: 'C+', min_score: 77, max_score: 79, gpa_points: 2.3, status: 'Pass', implication: 'Satisfactory' },
+            { grade: 'B-', min_score: 80, max_score: 82, gpa_points: 2.7, status: 'Pass', implication: 'Good' },
+            { grade: 'B', min_score: 83, max_score: 86, gpa_points: 3.0, status: 'Pass', implication: 'Good' },
+            { grade: 'B+', min_score: 87, max_score: 89, gpa_points: 3.3, status: 'Pass', implication: 'Good' },
+            { grade: 'A-', min_score: 90, max_score: 92, gpa_points: 3.7, status: 'Pass', implication: 'Excellent' },
+            { grade: 'A', min_score: 93, max_score: 96, gpa_points: 3.9, status: 'Pass', implication: 'Excellent' },
+            { grade: 'A+', min_score: 97, max_score: 100, gpa_points: 4.0, status: 'Pass', implication: 'Outstanding' }
+        ];
+    }
+    renderGradingRows();
+    syncGradingJsonMirror();
 }
 
 function syncGradingJsonMirror() {
