@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: 'ci-secret-key-for-django-management-commands'
+      DEBUG: 'True'
 
     steps:
       - name: Checkout repository
