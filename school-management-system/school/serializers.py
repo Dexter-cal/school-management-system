@@ -4,6 +4,7 @@ from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from .models import (
+    ChatMessage,
     SchoolClass, Subject, ClassSubject, Teacher, Student, FeeStructure, Mark, Attendance, Timetable, UserProfile,
     AcademicTerm, PromotionAudit, AlumniRegister, OTP, IDCounter, GradingScale, UserSession, SecurityAuditLog, APICredential,
     APICredentialHealthLog,
@@ -1036,3 +1037,21 @@ class StaffPayrollSerializer(serializers.ModelSerializer):
         if obj.other_staff:
             return f"{obj.other_staff.first_name} {obj.other_staff.last_name}"
         return None
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    sender_username = serializers.CharField(source='sender.username', read_only=True)
+    sender_full_name = serializers.SerializerMethodField(read_only=True)
+    sender_role = serializers.CharField(source='sender.profile.role', read_only=True)
+    recipient_username = serializers.CharField(source='recipient.username', read_only=True, allow_null=True)
+
+    class Meta:
+        model = ChatMessage
+        fields = '__all__'
+        read_only_fields = ('sender', 'created_at', 'is_read', 'read_at')
+
+    def get_sender_full_name(self, obj):
+        if obj.sender:
+            name = f"{obj.sender.first_name} {obj.sender.last_name}".strip()
+            return name or obj.sender.username
+        return "N/A"

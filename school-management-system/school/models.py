@@ -1592,3 +1592,24 @@ class StaffPayroll(models.Model):
         elif self.other_staff:
             staff_name = f"{self.other_staff.first_name} {self.other_staff.last_name}"
         return f"Payroll: {staff_name} - {self.net_amount} ({self.payment_status})"
+
+
+class ChatMessage(models.Model):
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_chat_messages')
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_chat_messages', null=True, blank=True)
+    room = models.CharField(max_length=80, blank=True, null=True, db_index=True)
+    message = models.TextField()
+    attachment_url = models.URLField(blank=True, null=True)
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['room', 'created_at']),
+            models.Index(fields=['sender', 'recipient', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"Chat from {self.sender.username} at {self.created_at:%Y-%m-%d %H:%M}"

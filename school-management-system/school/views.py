@@ -11,7 +11,8 @@ from django.db import transaction, IntegrityError # Added for atomic operations 
 from datetime import date, timedelta, datetime # Added for date and time operations
 from django.utils import timezone # Added for timezone awareness
 
-from .models import ( 
+from .models import (
+    ChatMessage,
     SchoolClass, Subject, ClassSubject, DocumentDraft, Teacher, Student, FeeStructure, Mark, Attendance, Timetable, UserProfile, 
     AcademicTerm, PromotionAudit, AlumniRegister, OTP, IDCounter, GradingScale, UserSession, SecurityAuditLog, 
     APICredential, APICredentialHealthLog, Payment, Invoice, ClassCharge, Event, SystemSetting, TeacherAttendance, TeacherAttendanceQRToken, 
@@ -21,7 +22,8 @@ from .models import (
     ExamType, AcademicCalendarEvent, TermInstallmentPlan, StudentDebtRecord, TeacherSalary, TeacherAllowance,
     OtherStaff, StaffPayroll
 ) 
-from .serializers import ( 
+from .serializers import (
+    ChatMessageSerializer,
     SchoolClassSerializer, SubjectSerializer, ClassSubjectSerializer, DocumentDraftSerializer, TeacherSerializer, StudentSerializer, 
     FeeStructureSerializer, MarkSerializer, AttendanceSerializer, 
     TimetableSerializer, UserSerializer, AcademicTermSerializer, 
@@ -40,7 +42,7 @@ from .serializers import (
 ) 
 from .utils import (
     generate_graduation_certificate_pdf, send_sms, generate_random_password, generate_otp,
-    send_email, generate_teacher_credential_pdf, generate_staff_credential_pdf, generate_parent_credential_pdf,
+    send_email, generate_teacher_credential_pdf, generate_teacher_appointment_letter_pdf, generate_staff_credential_pdf, generate_parent_credential_pdf,
     generate_family_credential_pdf,
     generate_student_credential_pdf, generate_admission_letter_pdf,
     generate_report_card_pdf, generate_payment_receipt_pdf, generate_fee_statement_pdf,
@@ -2218,6 +2220,28 @@ class TeacherViewSet(viewsets.ModelViewSet):
                 'print_teacher_credentials_url': f"/api/teachers/{teacher_instance.id}/print-credentials/?token={token}",
             }
             return Response(data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='print-appointment-letter')
+    def print_appointment_letter(self, request, pk=None):
+        role = get_role(request.user)
+        if not (role == 'superadmin' or is_admin_role(role) or role in ['reception']):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        teacher = self.get_object()
+        token = request.query_params.get('token')
+        payload = _get_handover_payload('teacher', teacher.id, token)
+        if not payload:
+            return Response({'detail': 'Handover token missing or expired. Re-generate credentials to print.'}, status=status.HTTP_400_BAD_REQUEST)
+        base_salary = TeacherSalary.objects.filter(teacher=teacher).values_list('base_salary', flat=True).first()
+        pdf_buffer = generate_teacher_appointment_letter_pdf(
+            teacher,
+            payload.get('username'),
+            payload.get('password'),
+            payload.get('login_url'),
+            base_salary=base_salary,
+            employment_type=teacher.employment_type,
+        )
+        fn = f"teacher_appointment_letter_${teacher.employee_id or teacher.id}.pdf".replace('$', '')
+        return FileResponse(pdf_buffer, as_attachment=False, filename=fn, content_type='application/pdf')
 
     @action(detail=True, methods=['get'], url_path='print-credentials') 
     def print_credentials(self, request, pk=None): 
@@ -11527,3 +11551,61 @@ class StaffPayrollViewSet(viewsets.ModelViewSet):
         )
         self._notify_payroll_paid(payroll)
         return Response(StaffPayrollSerializer(payroll).data)
+
+
+class ChatMessageViewSet(viewsets.ModelViewSet):
+    queryset = ChatMessage.objects.select_related('sender', 'sender__profile', 'recipient', 'recipient__profile').all()
+    serializer_class = ChatMessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = super().get_queryset()
+        room = (self.request.query_params.get('room') or '').strip()
+        recipient_id = (self.request.query_params.get('recipient') or '').strip()
+
+        if room:
+            return qs.filter(room=room)
+        if recipient_id.isdigit():
+            other_id = int(recipient_id)
+            return qs.filter(
+                (Q(sender=user) & Q(recipient_id=other_id)) |
+                (Q(sender_id=other_id) & Q(recipient=user))
+            )
+        return qs.filter(Q(sender=user) | Q(recipient=user) | Q(room__isnull=False)).order_by('-created_at')[:100]
+
+    def perform_create(self, serializer):
+        msg = serializer.save(sender=self.request.user)
+        if msg.recipient:
+            try:
+                notify_user(
+                    msg.recipient,
+                    category='system',
+                    title=f"New chat message from {self.request.user.first_name or self.request.user.username}",
+                    message=msg.message[:100],
+                    link_page='chat',
+                    meta={'chat_message_id': msg.id, 'sender_id': self.request.user.id},
+                )
+            except Exception:
+                pass
+
+    @action(detail=False, methods=['get'], url_path='contacts')
+    def contacts(self, request):
+        user = request.user
+        role = get_role(user)
+        users = User.objects.select_related('profile').filter(is_active=True).exclude(id=user.id)
+        if role == 'parent':
+            users = users.filter(profile__role__in=['teacher', 'admin', 'superadmin', 'headteacher', 'dos', 'bursar'])
+        elif role == 'student':
+            users = users.filter(profile__role__in=['teacher', 'admin', 'superadmin', 'headteacher', 'dos'])
+
+        data = []
+        for u in users[:50]:
+            name = f"{u.first_name} {u.last_name}".strip() or u.username
+            data.append({
+                'id': u.id,
+                'username': u.username,
+                'name': name,
+                'role': getattr(getattr(u, 'profile', None), 'role', 'user'),
+            })
+        return Response(data)

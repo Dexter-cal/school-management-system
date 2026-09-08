@@ -3526,6 +3526,84 @@ async function loadPage(page, el, label) {
         }
 
         main.innerHTML = `<div class="page"><div class="card"><div class="card-body">You do not have access to this page.</div></div></div>`;
+    } else if (page === 'chat') {
+        const [contacts, messages] = await Promise.all([
+            API.fetch('/chat-messages/contacts/').catch(() => []),
+            API.fetch('/chat-messages/').catch(() => [])
+        ]);
+
+        let activeContactId = (contacts[0] && contacts[0].id) ? contacts[0].id : null;
+
+        const renderChatPage = (selectedId) => {
+            const selectedUser = contacts.find(c => c.id == selectedId) || contacts[0] || { name: 'Chat', id: null };
+            activeContactId = selectedUser.id;
+
+            const contactRows = contacts.map(c => `
+              <div class="ri" style="cursor:pointer;padding:10px 12px;border-radius:8px;background:${c.id == activeContactId ? 'var(--mll2)' : 'transparent'}" onclick="window.switchChatContact(${c.id})">
+                <div class="av av-sm r" style="font-weight:700">${escapeHtml((c.name || 'U').substring(0, 2).toUpperCase())}</div>
+                <div class="ri-info">
+                  <div class="rn">${escapeHtml(c.name || 'User')}</div>
+                  <div class="rd" style="text-transform:capitalize">${escapeHtml(c.role || 'user')}</div>
+                </div>
+              </div>
+            `).join('') || '<div class="sub" style="padding:10px">No contacts found</div>';
+
+            const filteredMsgs = (messages || []).filter(m => (m.sender == activeContactId || m.recipient == activeContactId || (m.sender == currentUser.id && m.recipient == activeContactId)));
+            filteredMsgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            const msgRows = filteredMsgs.map(m => {
+                const isMe = m.sender == currentUser.id;
+                return `
+                  <div style="display:flex;justify-content:${isMe ? 'flex-end' : 'flex-start'};margin-bottom:10px">
+                    <div style="max-width:70%;padding:10px 14px;border-radius:12px;background:${isMe ? 'var(--m)' : 'var(--f0)'};color:${isMe ? '#fff' : 'var(--1a)'}">
+                      <div style="font-size:11px;font-weight:700;margin-bottom:2px;opacity:0.8">${escapeHtml(isMe ? 'You' : (m.sender_full_name || m.sender_username))}</div>
+                      <div style="font-size:13px;white-space:pre-wrap">${escapeHtml(m.message || '')}</div>
+                      <div style="font-size:10px;margin-top:4px;opacity:0.6;text-align:right">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                    </div>
+                  </div>
+                `;
+            }).join('') || '<div class="sub" style="text-align:center;padding:30px">No messages yet. Send a message to start chatting!</div>';
+
+            main.innerHTML = `
+              <div class="page">
+                <div class="ph"><div class="ph-title">Chat & In-App Messaging</div><div class="ph-sub">Connect with teachers, school administrators, and parents</div></div>
+                <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;min-height:540px">
+                  <div class="card"><div class="card-h"><div class="card-t">Contacts</div></div><div class="card-b np"><div style="display:flex;flex-direction:column;padding:8px">${contactRows}</div></div></div>
+                  <div class="card" style="display:flex;flex-direction:column">
+                    <div class="card-h"><div class="card-t">${escapeHtml(selectedUser.name || 'Chat')}</div></div>
+                    <div class="card-b" id="chat-box-body" style="flex:1;overflow-y:auto;max-height:420px;padding:16px">${msgRows}</div>
+                    <div style="padding:12px 16px;border-top:1px solid var(--f0);display:flex;gap:10px">
+                      <input class="fin2" id="chat-input-msg" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendChatMessage(${activeContactId})">
+                      <button class="btn btn-p" onclick="sendChatMessage(${activeContactId})">Send</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+            const box = document.getElementById('chat-box-body');
+            if (box) box.scrollTop = box.scrollHeight;
+        };
+
+        window.switchChatContact = (id) => renderChatPage(id);
+        window.sendChatMessage = async (recipientId) => {
+            const input = document.getElementById('chat-input-msg');
+            const msg = (input ? input.value : '').trim();
+            if (!msg || !recipientId) return;
+            try {
+                const newMsg = await API.fetch('/chat-messages/', {
+                    method: 'POST',
+                    body: JSON.stringify({ recipient: recipientId, message: msg })
+                });
+                messages.push(newMsg);
+                if (input) input.value = '';
+                renderChatPage(recipientId);
+            } catch (e) {
+                flash((e && e.detail) ? e.detail : 'Failed to send message.');
+            }
+        };
+
+        renderChatPage(activeContactId);
+
     } else if (page === 'announcements') {
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
         const canEdit = ['superadmin', 'admin', 'reception'].includes(role);
