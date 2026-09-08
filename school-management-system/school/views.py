@@ -4163,14 +4163,14 @@ class UserViewSet(viewsets.ModelViewSet):
         phone_number = (request.data.get('phone_number') or '').strip() or None
         email_address = (request.data.get('email_address') or '').strip().lower() or None
 
-        if role in ['student', 'parent']:
-            return Response({'detail': "Create student/parent accounts via Students registration (it auto-creates portals)."}, status=status.HTTP_400_BAD_REQUEST)
-
         if not username:
-            username = _unique_username(
-                _recommended_username(first_name=first_name, last_name=last_name, role=role),
-                fallback=role or 'user',
-            )
+            if role == 'parent' and phone_number:
+                username = phone_number
+            else:
+                username = _unique_username(
+                    _recommended_username(first_name=first_name, last_name=last_name, role=role),
+                    fallback=role or 'user',
+                )
 
         generated_password = None
         if auto_password:
@@ -6125,10 +6125,16 @@ class GradingScaleViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, CanManageGrading]
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        with transaction.atomic():
+            if serializer.validated_data.get('is_default'):
+                GradingScale.objects.update(is_default=False)
+            serializer.save(created_by=self.request.user)
 
     def perform_update(self, serializer):
-        serializer.save()
+        with transaction.atomic():
+            if serializer.validated_data.get('is_default'):
+                GradingScale.objects.exclude(id=serializer.instance.id).update(is_default=False)
+            serializer.save()
 
     @action(detail=False, methods=['post'], url_path='set-default')
     def set_default_grading_scale(self, request):

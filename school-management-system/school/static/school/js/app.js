@@ -8287,7 +8287,7 @@ function gradingValidation(rows) {
     if (!normalized.length) return { ok: false, messages: ['Add at least one grading band.'], normalized };
     const messages = [];
     const seen = new Set();
-    let expected = 0;
+    let prevMax = 0;
     normalized.forEach((row, idx) => {
         if (!row.grade) messages.push(`Band ${idx + 1} needs a grade.`);
         if (row.min_score < 0 || row.max_score > 100) messages.push(`${gradingRowPreview(row)} must stay inside 0-100.`);
@@ -8297,15 +8297,57 @@ function gradingValidation(rows) {
             if (seen.has(key)) messages.push(`Grade ${row.grade} is duplicated.`);
             seen.add(key);
         }
-        if (row.min_score !== expected) {
-            if (row.min_score < expected) messages.push(`${gradingRowPreview(row)} overlaps another band.`);
-            else messages.push(`There is a gap before ${gradingRowPreview(row)}.`);
+        if (idx > 0) {
+            if (row.min_score < prevMax) messages.push(`${gradingRowPreview(row)} overlaps another band.`);
+            else if (row.min_score > prevMax + 1) messages.push(`There is a gap before ${gradingRowPreview(row)}.`);
         }
-        expected = row.max_score + 1;
+        prevMax = row.max_score;
     });
     if (normalized[0].min_score !== 0) messages.push('The first band should start at 0.');
     if (normalized[normalized.length - 1].max_score !== 100) messages.push('The last band should end at 100.');
     return { ok: messages.length === 0, messages, normalized };
+}
+
+function loadGradingPreset(type) {
+    if (type === '5grade') {
+        GRADING_ROWS = [
+            { grade: 'F', min_score: 0, max_score: 59, gpa_points: 0, status: 'Fail', implication: 'Repeat' },
+            { grade: 'D', min_score: 60, max_score: 69, gpa_points: 1, status: 'Pass', implication: 'Needs Improvement' },
+            { grade: 'C', min_score: 70, max_score: 79, gpa_points: 2, status: 'Pass', implication: 'Satisfactory' },
+            { grade: 'B', min_score: 80, max_score: 89, gpa_points: 3, status: 'Pass', implication: 'Good' },
+            { grade: 'A', min_score: 90, max_score: 100, gpa_points: 4, status: 'Pass', implication: 'Excellent' }
+        ];
+    } else if (type === 'uneb') {
+        GRADING_ROWS = [
+            { grade: 'F9', min_score: 0, max_score: 39, gpa_points: 9, status: 'Fail', implication: 'Fail' },
+            { grade: 'P8', min_score: 40, max_score: 44, gpa_points: 8, status: 'Pass', implication: 'Pass' },
+            { grade: 'P7', min_score: 45, max_score: 49, gpa_points: 7, status: 'Pass', implication: 'Pass' },
+            { grade: 'C6', min_score: 50, max_score: 54, gpa_points: 6, status: 'Pass', implication: 'Credit' },
+            { grade: 'C5', min_score: 55, max_score: 59, gpa_points: 5, status: 'Pass', implication: 'Credit' },
+            { grade: 'C4', min_score: 60, max_score: 69, gpa_points: 4, status: 'Pass', implication: 'Credit' },
+            { grade: 'C3', min_score: 70, max_score: 79, gpa_points: 3, status: 'Pass', implication: 'Credit' },
+            { grade: 'D2', min_score: 80, max_score: 89, gpa_points: 2, status: 'Pass', implication: 'Distinction' },
+            { grade: 'D1', min_score: 90, max_score: 100, gpa_points: 1, status: 'Pass', implication: 'Distinction' }
+        ];
+    } else if (type === '13grade') {
+        GRADING_ROWS = [
+            { grade: 'F', min_score: 0, max_score: 59, gpa_points: 0, status: 'Fail', implication: 'Fail' },
+            { grade: 'D-', min_score: 60, max_score: 62, gpa_points: 0.7, status: 'Pass', implication: 'Pass' },
+            { grade: 'D', min_score: 63, max_score: 66, gpa_points: 1.0, status: 'Pass', implication: 'Pass' },
+            { grade: 'D+', min_score: 67, max_score: 69, gpa_points: 1.3, status: 'Pass', implication: 'Pass' },
+            { grade: 'C-', min_score: 70, max_score: 72, gpa_points: 1.7, status: 'Pass', implication: 'Satisfactory' },
+            { grade: 'C', min_score: 73, max_score: 76, gpa_points: 2.0, status: 'Pass', implication: 'Satisfactory' },
+            { grade: 'C+', min_score: 77, max_score: 79, gpa_points: 2.3, status: 'Pass', implication: 'Satisfactory' },
+            { grade: 'B-', min_score: 80, max_score: 82, gpa_points: 2.7, status: 'Pass', implication: 'Good' },
+            { grade: 'B', min_score: 83, max_score: 86, gpa_points: 3.0, status: 'Pass', implication: 'Good' },
+            { grade: 'B+', min_score: 87, max_score: 89, gpa_points: 3.3, status: 'Pass', implication: 'Good' },
+            { grade: 'A-', min_score: 90, max_score: 92, gpa_points: 3.7, status: 'Pass', implication: 'Excellent' },
+            { grade: 'A', min_score: 93, max_score: 96, gpa_points: 3.9, status: 'Pass', implication: 'Excellent' },
+            { grade: 'A+', min_score: 97, max_score: 100, gpa_points: 4.0, status: 'Pass', implication: 'Outstanding' }
+        ];
+    }
+    renderGradingRows();
+    syncGradingJsonMirror();
 }
 
 function syncGradingJsonMirror() {

@@ -392,14 +392,16 @@ class GradingScaleSerializer(serializers.ModelSerializer):
         if normalized[-1]['max_score'] != 100:
             raise serializers.ValidationError('The last grading band must end at 100.')
 
-        expected_min = 0
-        for row in normalized:
-            if row['min_score'] != expected_min:
-                prev = expected_min - 1
-                if row['min_score'] <= prev:
-                    raise serializers.ValidationError(f'Band "{row["grade"]}" overlaps another band.')
+        prev_max = 0
+        for idx, row in enumerate(normalized):
+            if idx == 0:
+                prev_max = row['max_score']
+                continue
+            if row['min_score'] < prev_max:
+                raise serializers.ValidationError(f'Band "{row["grade"]}" overlaps another band.')
+            if row['min_score'] > prev_max + 1:
                 raise serializers.ValidationError(f'There is a gap before band "{row["grade"]}".')
-            expected_min = row['max_score'] + 1
+            prev_max = row['max_score']
 
         return normalized
     
