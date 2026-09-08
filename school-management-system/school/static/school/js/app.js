@@ -7606,6 +7606,8 @@ async function submitPaymentProof(studentId, academicYear, termNumber, method, p
     }
 }
 
+let mobilePollInterval = null;
+
 async function startMobilePayment(studentId, academicYear, termNumber) {
     const amount = Number(document.getElementById(`mm-amt-${studentId}`)?.value || 0);
     const method = (document.getElementById(`mm-method-${studentId}`)?.value || 'mtn_momo').trim();
@@ -7628,11 +7630,91 @@ async function startMobilePayment(studentId, academicYear, termNumber) {
                 purpose,
             })
         });
-        flash((res && res.detail) ? `${res.detail} Paying for ${studentLabel || 'the selected student'}.` : 'Mobile payment request sent.');
-        loadPage('my_fees', null, 'Fees & Payments');
+
+        const paymentObj = (res && res.payment) ? res.payment : { id: res.id, amount, phone_number, method };
+        showMobilePaymentModal(paymentObj, studentLabel);
     } catch (e) {
         flash((e && e.detail) ? e.detail : 'Failed to start mobile payment.');
     }
+}
+
+function showMobilePaymentModal(payment, studentLabel) {
+    if (mobilePollInterval) clearInterval(mobilePollInterval);
+
+    let modal = document.getElementById('modal-mobile-prompt');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-mobile-prompt';
+        modal.className = 'mov show';
+        document.body.appendChild(modal);
+    }
+
+    const methodLabel = (payment.method === 'airtel_money') ? 'Airtel Money' : 'MTN Mobile Money';
+    const paymentId = payment.id;
+
+    modal.innerHTML = `
+      <div class="modal" style="max-width:480px;text-align:center;padding:24px">
+        <div style="font-size:36px;margin-bottom:8px">📲</div>
+        <div style="font-size:18px;font-weight:800;color:var(--1a);margin-bottom:8px">USSD PIN Prompt Sent</div>
+        <div style="font-size:13px;color:var(--66);margin-bottom:16px;line-height:1.5">
+          A prompt has been sent to <strong>${escapeHtml(payment.phone_number || '')}</strong> via ${methodLabel}.<br>
+          Please check your phone screen and <strong>enter your Mobile Money PIN</strong> to authorize payment of <strong>UGX ${Number(payment.amount || 0).toLocaleString()}</strong>.
+        </div>
+        <div id="mm-poll-status" style="padding:12px;border-radius:10px;background:var(--f0);font-size:13px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px">
+          <span style="font-size:13px">⏳</span>
+          <span>Waiting for PIN entry on phone...</span>
+        </div>
+        <button class="btn btn-ghost" onclick="closeMobilePaymentModal()">Cancel / Close</button>
+      </div>
+    `;
+    modal.classList.add('show');
+
+    let attempts = 0;
+    mobilePollInterval = setInterval(async () => {
+        attempts++;
+        if (attempts > 20) {
+            clearInterval(mobilePollInterval);
+            const statusEl = document.getElementById('mm-poll-status');
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--or)">⚠️ Request timed out. If you entered your PIN, refresh page to see updated balance.</span>';
+            return;
+        }
+        try {
+            const syncRes = await API.fetch('/payment-submissions/mobile-sync/', {
+                method: 'POST',
+                body: JSON.stringify({ payment: paymentId })
+            });
+            const st = (syncRes && syncRes.status) ? syncRes.status : '';
+            const statusEl = document.getElementById('mm-poll-status');
+            if (st === 'received' || st === 'approved') {
+                clearInterval(mobilePollInterval);
+                if (statusEl) {
+                    statusEl.style.background = 'var(--grl)';
+                    statusEl.style.color = 'var(--gr)';
+                    statusEl.innerHTML = '✅ Payment Received! Refreshing account balance...';
+                }
+                setTimeout(() => {
+                    closeMobilePaymentModal();
+                    flash('Payment completed successfully!');
+                    loadPage('my_fees', null, 'Fees & Payments');
+                }, 1800);
+            } else if (st === 'rejected' || st === 'failed') {
+                clearInterval(mobilePollInterval);
+                if (statusEl) {
+                    statusEl.style.background = 'var(--rdl)';
+                    statusEl.style.color = 'var(--rd)';
+                    statusEl.innerHTML = '❌ Payment Failed or Cancelled (check balance or PIN).';
+                }
+            }
+        } catch (err) {
+            // keep polling
+        }
+    }, 3500);
+}
+
+function closeMobilePaymentModal() {
+    if (mobilePollInterval) clearInterval(mobilePollInterval);
+    const modal = document.getElementById('modal-mobile-prompt');
+    if (modal) modal.remove();
 }
 
 async function toggleAdjustmentActive(id, isActive) {

@@ -60,6 +60,7 @@ from django.utils.dateparse import parse_datetime
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from .validators import validate_phone_number
 from django.http import FileResponse
 import secrets
 from django.utils.decorators import method_decorator
@@ -4162,6 +4163,18 @@ class UserViewSet(viewsets.ModelViewSet):
         # Normalize optional contact fields: never store empty string into unique columns.
         phone_number = (request.data.get('phone_number') or '').strip() or None
         email_address = (request.data.get('email_address') or '').strip().lower() or None
+
+        if email_address:
+            try:
+                validate_email(email_address)
+            except ValidationError:
+                return Response({'detail': 'Enter a valid email address.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if phone_number:
+            try:
+                validate_phone_number(phone_number)
+            except ValidationError as e:
+                return Response({'detail': str(e.message if hasattr(e, 'message') else e)}, status=status.HTTP_400_BAD_REQUEST)
 
         if not username:
             if role == 'parent' and phone_number:
