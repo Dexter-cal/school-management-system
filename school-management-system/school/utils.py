@@ -1556,3 +1556,45 @@ def generate_student_registration_pdf(student, school_name="Bitende Junior Schoo
     p.save()
     buffer.seek(0)
     return buffer
+
+
+def generate_student_id_card_pdf(student, school_name="Bitende Junior School"):
+    buffer = BytesIO()
+    # Pocket ID card dimensions: 3.375 x 2.125 inches (243 x 153 points)
+    card_w, card_h = 243, 153
+    p = canvas.Canvas(buffer, pagesize=(card_w, card_h))
+
+    branding = get_school_branding()
+    s_name = branding.get('school_name') or school_name
+
+    p.setFillColorRGB(0.48, 0, 0)
+    p.rect(0, card_h - 32, card_w, 32, fill=1, stroke=0)
+    p.setFillColorRGB(1, 1, 1)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawCentredString(card_w / 2, card_h - 20, s_name)
+
+    p.setFillColorRGB(0.96, 0.96, 0.98)
+    p.rect(10, 10, 54, 68, fill=1, stroke=1)
+    p.setFillColorRGB(0.4, 0.4, 0.4)
+    p.setFont('Helvetica-Bold', 16)
+    p.drawCentredString(37, 38, (student.first_name[:1] + student.last_name[:1]).upper() if student.first_name and student.last_name else "ST")
+
+    p.setFillColorRGB(0.1, 0.1, 0.1)
+    p.setFont('Helvetica-Bold', 10)
+    p.drawString(72, card_h - 48, f"{student.first_name} {student.last_name}")
+    p.setFont('Helvetica', 8)
+    p.drawString(72, card_h - 62, f"ID: {student.student_id}")
+    p.drawString(72, card_h - 74, f"Class: {getattr(getattr(student, 'current_class', None), 'level', '-')}{student.section or ''}")
+    p.drawString(72, card_h - 86, f"Parent Phone: {student.parent_phone or '-'}")
+    p.drawString(72, card_h - 98, f"District: {student.district or 'Kampala'}")
+
+    p.setFillColorRGB(0.48, 0, 0)
+    p.rect(0, 0, card_w, 12, fill=1, stroke=0)
+    p.setFillColorRGB(1, 1, 1)
+    p.setFont('Helvetica-Oblique', 7)
+    p.drawCentredString(card_w / 2, 3, "STUDENT IDENTIFICATION CARD · BITENDE JUNIOR SCHOOL")
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return buffer
