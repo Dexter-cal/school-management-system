@@ -42,7 +42,7 @@ from .serializers import (
 ) 
 from .utils import (
     generate_graduation_certificate_pdf, send_sms, generate_random_password, generate_otp,
-    send_email, generate_teacher_credential_pdf, generate_teacher_appointment_letter_pdf, generate_staff_credential_pdf, generate_parent_credential_pdf,
+    send_email, generate_teacher_credential_pdf, generate_teacher_appointment_letter_pdf, generate_student_registration_pdf, generate_staff_credential_pdf, generate_parent_credential_pdf,
     generate_family_credential_pdf,
     generate_student_credential_pdf, generate_admission_letter_pdf,
     generate_report_card_pdf, generate_payment_receipt_pdf, generate_fee_statement_pdf,
@@ -2449,6 +2449,13 @@ class StudentViewSet(viewsets.ModelViewSet):
         if not IsSuperUser().has_permission(request, self):
             return Response({'detail': 'Only super admin can delete students.'}, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['get'], url_path='print-registration-form')
+    def print_registration_form(self, request, pk=None):
+        student = self.get_object()
+        pdf_buffer = generate_student_registration_pdf(student)
+        fn = f"registration_form_${student.student_id}.pdf".replace('$', '')
+        return FileResponse(pdf_buffer, as_attachment=False, filename=fn, content_type='application/pdf')
 
     @action(detail=True, methods=['get'], url_path='print-admission-letter')
     def print_admission_letter(self, request, pk=None):

@@ -1473,3 +1473,86 @@ def generate_teacher_appointment_letter_pdf(teacher, username, password, login_u
     p.save()
     buffer.seek(0)
     return buffer
+
+
+def generate_student_registration_pdf(student, school_name="Bitende Junior School"):
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    branding = get_school_branding()
+    s_name = branding.get('school_name') or school_name
+
+    _try_draw_logo(p, branding, x=54, y=height - 80, size=50)
+    p.setFont('Helvetica-Bold', 18)
+    p.setFillColorRGB(0.48, 0, 0)
+    p.drawString(115, height - 50, s_name)
+    p.setFont('Helvetica', 10)
+    p.setFillColorRGB(0.3, 0.3, 0.3)
+    p.drawString(115, height - 65, f"{branding.get('address') or 'Kampala, Uganda'} | Phone: {branding.get('phone') or '+256 701 234567'}")
+    p.drawString(115, height - 78, f"Motto: {branding.get('motto') or 'Strive for Excellence'}")
+
+    p.setStrokeColorRGB(0.8, 0.8, 0.8)
+    p.setLineWidth(1)
+    p.line(54, height - 92, width - 54, height - 92)
+
+    p.setFont('Helvetica-Bold', 14)
+    p.setFillColorRGB(0.1, 0.1, 0.1)
+    p.drawCentredString(width / 2, height - 120, "OFFICIAL STUDENT REGISTRATION FORM")
+
+    today_str = date.today().strftime('%d %B %Y')
+    p.setFont('Helvetica', 10)
+    p.drawString(54, height - 145, f"Date of Issue: {today_str}")
+
+    p.setFillColorRGB(0.97, 0.97, 0.98)
+    p.rect(54, height - 310, width - 108, 150, fill=1, stroke=1)
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(68, height - 175, "1. STUDENT ACADEMIC PROFILE")
+    p.setFont('Helvetica', 10)
+    p.drawString(68, height - 195, f"Full Name: {student.first_name} {student.last_name}")
+    p.drawString(320, height - 195, f"Student ID: {student.student_id}")
+    p.drawString(68, height - 215, f"Class: {getattr(getattr(student, 'current_class', None), 'level', '-')}{student.section or ''}")
+    p.drawString(320, height - 215, f"Gender: {student.gender or '-'}")
+    p.drawString(68, height - 235, f"Date of Birth: {student.dob or '-'}")
+    p.drawString(320, height - 235, f"District: {student.district or '-'}")
+    p.drawString(68, height - 255, f"Religion: {student.religion or '-'}")
+    p.drawString(320, height - 255, f"Enrollment Date: {student.enrollment_date or '-'}")
+    p.drawString(68, height - 275, f"Status: {getattr(student, 'status', 'Active').title()}")
+    p.drawString(320, height - 275, f"Conduct Grade: {getattr(student, 'conduct_grade', 'Good').title()}")
+
+    p.setFillColorRGB(0.96, 0.96, 0.96)
+    p.rect(54, height - 440, width - 108, 115, fill=1, stroke=1)
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(68, height - 340, "2. GUARDIAN & CONTACT DETAILS")
+    p.setFont('Helvetica', 10)
+    p.drawString(68, height - 360, f"Parent/Guardian: {student.parent_name or '-'}")
+    p.drawString(320, height - 360, f"Relationship: {student.parent_relationship or '-'}")
+    p.drawString(68, height - 380, f"Primary Phone: {student.parent_phone or '-'}")
+    p.drawString(320, height - 380, f"Secondary Phone: {student.parent_phone2 or '-'}")
+    p.drawString(68, height - 400, f"Home Address: {student.home_address or '-'}")
+    p.drawString(68, height - 420, f"Transport Route: {student.transport_route or '-'}")
+
+    p.setFillColorRGB(0.98, 0.95, 0.95)
+    p.rect(54, height - 550, width - 108, 95, fill=1, stroke=1)
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(68, height - 465, "3. HEALTH & EMERGENCY PROFILE")
+    p.setFont('Helvetica', 10)
+    p.drawString(68, height - 485, f"Emergency Contact: {student.emergency_contact_name or '-'} ({student.emergency_contact_phone or '-'})")
+    p.drawString(68, height - 505, f"Known Allergies: {student.allergies or 'None reported'}")
+    p.drawString(68, height - 525, f"Medical Conditions: {student.medical_conditions or 'None reported'}")
+
+    p.line(54, height - 620, 250, height - 620)
+    p.drawString(54, height - 635, "Headteacher / Registrar Signature")
+    p.drawString(54, height - 650, "Date: ________________________")
+
+    p.line(320, height - 620, 520, height - 620)
+    p.drawString(320, height - 635, "Parent / Guardian Signature")
+    p.drawString(320, height - 650, "Date: ________________________")
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return buffer
