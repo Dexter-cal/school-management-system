@@ -15,7 +15,7 @@ from .views import (
     CommunicationCampaignViewSet, CommunicationDeliveryViewSet,
     # New viewsets
     ExamTypeViewSet, AcademicCalendarEventViewSet, TermInstallmentPlanViewSet, StudentDebtRecordViewSet,
-    TeacherSalaryViewSet, TeacherAllowanceViewSet, OtherStaffViewSet, StaffPayrollViewSet,
+    TeacherSalaryViewSet, TeacherAllowanceViewSet, OtherStaffViewSet, StaffPayrollViewSet, ChatMessageViewSet,
     index  # Added new ViewSets
 )
 
@@ -73,6 +73,7 @@ router.register(r'teacher-salaries', TeacherSalaryViewSet, basename='teacher-sal
 router.register(r'teacher-allowances', TeacherAllowanceViewSet, basename='teacher-allowances')
 router.register(r'other-staff', OtherStaffViewSet, basename='other-staff')
 router.register(r'staff-payroll', StaffPayrollViewSet, basename='staff-payroll')
+router.register(r'chat-messages', ChatMessageViewSet, basename='chat-messages')
 
 urlpatterns = [
     path('', index, name='index'),

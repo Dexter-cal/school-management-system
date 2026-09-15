@@ -434,7 +434,7 @@ def generate_payment_receipt_pdf(payment, school_name="Bitende Junior School"):
     row("Date", received_at.strftime('%Y-%m-%d %H:%M') if received_at else "-")
     row("Student", f"{getattr(stu, 'first_name', '')} {getattr(stu, 'last_name', '')}".strip() if stu else "-")
     row("Student ID", getattr(stu, 'student_id', None) if stu else "-")
-    row("Amount (UGX)", getattr(payment, 'amount', None))
+    row("Amount (UGX)", f"UGX {float(payment.amount):,.2f}" if getattr(payment, 'amount', None) is not None else "-")
     row("Method", getattr(payment, 'method', None))
     row("Reference", getattr(payment, 'reference', None))
     row("Status", getattr(payment, 'status', None))
@@ -1392,3 +1392,209 @@ def send_sms(to_number, message):
     except Exception as e:
         logger.error(f"Failed to send SMS to {to_number}: {e}")
         return False
+
+
+def generate_teacher_appointment_letter_pdf(teacher, username, password, login_url, base_salary=None, employment_type=None):
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    branding = get_school_branding()
+    school_name = branding.get('school_name') or "Bitende Junior School"
+
+    _try_draw_logo(p, branding, x=54, y=height - 80, size=50)
+    p.setFont('Helvetica-Bold', 18)
+    p.setFillColorRGB(0.48, 0, 0)
+    p.drawString(115, height - 50, school_name)
+    p.setFont('Helvetica', 10)
+    p.setFillColorRGB(0.3, 0.3, 0.3)
+    p.drawString(115, height - 65, f"{branding.get('address') or 'Kampala, Uganda'} | Phone: {branding.get('phone') or '+256 701 234567'}")
+    p.drawString(115, height - 78, f"Motto: {branding.get('motto') or 'Strive for Excellence'}")
+
+    p.setStrokeColorRGB(0.8, 0.8, 0.8)
+    p.setLineWidth(1)
+    p.line(54, height - 92, width - 54, height - 92)
+
+    p.setFont('Helvetica-Bold', 14)
+    p.setFillColorRGB(0.1, 0.1, 0.1)
+    p.drawCentredString(width / 2, height - 120, "OFFICIAL APPOINTMENT & INTAKE WELCOME LETTER")
+
+    p.setFont('Helvetica', 11)
+    today_str = date.today().strftime('%d %B %Y')
+    p.drawString(54, height - 145, f"Date: {today_str}")
+    p.drawString(54, height - 165, f"Dear {teacher.first_name} {teacher.last_name},")
+    p.drawString(54, height - 185, f"We are pleased to welcome you to the academic staff team at {school_name}. Below are your official")
+    p.drawString(54, height - 200, "employment details, assigned credentials, and system access information.")
+
+    p.setFillColorRGB(0.97, 0.97, 0.98)
+    p.rect(54, height - 310, width - 108, 95, fill=1, stroke=1)
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(68, height - 230, "1. STAFF PROFILE & APPOINTMENT DETAILS")
+    p.setFont('Helvetica', 10)
+    p.drawString(68, height - 250, f"Full Name: {teacher.first_name} {teacher.last_name}")
+    p.drawString(300, height - 250, f"Employee ID: {teacher.employee_id or 'N/A'}")
+    p.drawString(68, height - 270, f"Phone: {teacher.phone or 'N/A'}")
+    p.drawString(300, height - 270, f"Email: {teacher.email or 'N/A'}")
+    emp_type = employment_type or getattr(teacher, 'employment_type', 'Permanent')
+    salary_str = f"UGX {float(base_salary):,.2f}" if base_salary is not None else "As per Contract"
+    p.drawString(68, height - 295, f"Employment Type: {emp_type}")
+    p.drawString(300, height - 295, f"Base Salary: {salary_str}")
+
+    p.setFillColorRGB(0.96, 0.93, 0.93)
+    p.rect(54, height - 425, width - 108, 95, fill=1, stroke=1)
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(68, height - 345, "2. SECURE SYSTEM PORTAL CREDENTIALS")
+    p.setFont('Helvetica', 10)
+    p.drawString(68, height - 365, f"Portal URL: {login_url}")
+    p.drawString(68, height - 385, f"Username: {username}")
+    p.drawString(300, height - 385, f"Temporary Password: {password}")
+    p.setFont('Helvetica-Oblique', 9)
+    p.setFillColorRGB(0.6, 0, 0)
+    p.drawString(68, height - 410, "* SECURITY REMINDER: Log in immediately and update your temporary password on your first session.")
+
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(54, height - 450, "3. PORTAL TERMS OF USE & CODE OF CONDUCT")
+    p.setFont('Helvetica', 9)
+    p.drawString(54, height - 470, "By signing below, you agree to maintain strictly confidential access to student records, grades, and fee data.")
+    p.drawString(54, height - 485, "Unauthorized sharing of portal credentials or tampering with assessment marks is strictly prohibited.")
+
+    p.line(54, height - 560, 250, height - 560)
+    p.drawString(54, height - 575, "Principal / Head Teacher Signature")
+    p.drawString(54, height - 590, "Date: ________________________")
+
+    p.line(320, height - 560, 520, height - 560)
+    p.drawString(320, height - 575, "Teacher Signature & Acceptance")
+    p.drawString(320, height - 590, "Date: ________________________")
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return buffer
+
+
+def generate_student_registration_pdf(student, school_name="Bitende Junior School"):
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    branding = get_school_branding()
+    s_name = branding.get('school_name') or school_name
+
+    _try_draw_logo(p, branding, x=54, y=height - 80, size=50)
+    p.setFont('Helvetica-Bold', 18)
+    p.setFillColorRGB(0.48, 0, 0)
+    p.drawString(115, height - 50, s_name)
+    p.setFont('Helvetica', 10)
+    p.setFillColorRGB(0.3, 0.3, 0.3)
+    p.drawString(115, height - 65, f"{branding.get('address') or 'Kampala, Uganda'} | Phone: {branding.get('phone') or '+256 701 234567'}")
+    p.drawString(115, height - 78, f"Motto: {branding.get('motto') or 'Strive for Excellence'}")
+
+    p.setStrokeColorRGB(0.8, 0.8, 0.8)
+    p.setLineWidth(1)
+    p.line(54, height - 92, width - 54, height - 92)
+
+    p.setFont('Helvetica-Bold', 14)
+    p.setFillColorRGB(0.1, 0.1, 0.1)
+    p.drawCentredString(width / 2, height - 120, "OFFICIAL STUDENT REGISTRATION FORM")
+
+    today_str = date.today().strftime('%d %B %Y')
+    p.setFont('Helvetica', 10)
+    p.drawString(54, height - 145, f"Date of Issue: {today_str}")
+
+    p.setFillColorRGB(0.97, 0.97, 0.98)
+    p.rect(54, height - 310, width - 108, 150, fill=1, stroke=1)
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(68, height - 175, "1. STUDENT ACADEMIC PROFILE")
+    p.setFont('Helvetica', 10)
+    p.drawString(68, height - 195, f"Full Name: {student.first_name} {student.last_name}")
+    p.drawString(320, height - 195, f"Student ID: {student.student_id}")
+    p.drawString(68, height - 215, f"Class: {getattr(getattr(student, 'current_class', None), 'level', '-')}{student.section or ''}")
+    p.drawString(320, height - 215, f"Gender: {student.gender or '-'}")
+    p.drawString(68, height - 235, f"Date of Birth: {student.dob or '-'}")
+    p.drawString(320, height - 235, f"District: {student.district or '-'}")
+    p.drawString(68, height - 255, f"Religion: {student.religion or '-'}")
+    p.drawString(320, height - 255, f"Enrollment Date: {student.enrollment_date or '-'}")
+    p.drawString(68, height - 275, f"Status: {getattr(student, 'status', 'Active').title()}")
+    p.drawString(320, height - 275, f"Conduct Grade: {getattr(student, 'conduct_grade', 'Good').title()}")
+
+    p.setFillColorRGB(0.96, 0.96, 0.96)
+    p.rect(54, height - 440, width - 108, 115, fill=1, stroke=1)
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(68, height - 340, "2. GUARDIAN & CONTACT DETAILS")
+    p.setFont('Helvetica', 10)
+    p.drawString(68, height - 360, f"Parent/Guardian: {student.parent_name or '-'}")
+    p.drawString(320, height - 360, f"Relationship: {student.parent_relationship or '-'}")
+    p.drawString(68, height - 380, f"Primary Phone: {student.parent_phone or '-'}")
+    p.drawString(320, height - 380, f"Secondary Phone: {student.parent_phone2 or '-'}")
+    p.drawString(68, height - 400, f"Home Address: {student.home_address or '-'}")
+    p.drawString(68, height - 420, f"Transport Route: {student.transport_route or '-'}")
+
+    p.setFillColorRGB(0.98, 0.95, 0.95)
+    p.rect(54, height - 550, width - 108, 95, fill=1, stroke=1)
+    p.setFillColorRGB(0, 0, 0)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawString(68, height - 465, "3. HEALTH & EMERGENCY PROFILE")
+    p.setFont('Helvetica', 10)
+    p.drawString(68, height - 485, f"Emergency Contact: {student.emergency_contact_name or '-'} ({student.emergency_contact_phone or '-'})")
+    p.drawString(68, height - 505, f"Known Allergies: {student.allergies or 'None reported'}")
+    p.drawString(68, height - 525, f"Medical Conditions: {student.medical_conditions or 'None reported'}")
+
+    p.line(54, height - 620, 250, height - 620)
+    p.drawString(54, height - 635, "Headteacher / Registrar Signature")
+    p.drawString(54, height - 650, "Date: ________________________")
+
+    p.line(320, height - 620, 520, height - 620)
+    p.drawString(320, height - 635, "Parent / Guardian Signature")
+    p.drawString(320, height - 650, "Date: ________________________")
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return buffer
+
+
+def generate_student_id_card_pdf(student, school_name="Bitende Junior School"):
+    buffer = BytesIO()
+    # Pocket ID card dimensions: 3.375 x 2.125 inches (243 x 153 points)
+    card_w, card_h = 243, 153
+    p = canvas.Canvas(buffer, pagesize=(card_w, card_h))
+
+    branding = get_school_branding()
+    s_name = branding.get('school_name') or school_name
+
+    p.setFillColorRGB(0.48, 0, 0)
+    p.rect(0, card_h - 32, card_w, 32, fill=1, stroke=0)
+    p.setFillColorRGB(1, 1, 1)
+    p.setFont('Helvetica-Bold', 11)
+    p.drawCentredString(card_w / 2, card_h - 20, s_name)
+
+    p.setFillColorRGB(0.96, 0.96, 0.98)
+    p.rect(10, 10, 54, 68, fill=1, stroke=1)
+    p.setFillColorRGB(0.4, 0.4, 0.4)
+    p.setFont('Helvetica-Bold', 16)
+    p.drawCentredString(37, 38, (student.first_name[:1] + student.last_name[:1]).upper() if student.first_name and student.last_name else "ST")
+
+    p.setFillColorRGB(0.1, 0.1, 0.1)
+    p.setFont('Helvetica-Bold', 10)
+    p.drawString(72, card_h - 48, f"{student.first_name} {student.last_name}")
+    p.setFont('Helvetica', 8)
+    p.drawString(72, card_h - 62, f"ID: {student.student_id}")
+    p.drawString(72, card_h - 74, f"Class: {getattr(getattr(student, 'current_class', None), 'level', '-')}{student.section or ''}")
+    p.drawString(72, card_h - 86, f"Parent Phone: {student.parent_phone or '-'}")
+    p.drawString(72, card_h - 98, f"District: {student.district or 'Kampala'}")
+
+    p.setFillColorRGB(0.48, 0, 0)
+    p.rect(0, 0, card_w, 12, fill=1, stroke=0)
+    p.setFillColorRGB(1, 1, 1)
+    p.setFont('Helvetica-Oblique', 7)
+    p.drawCentredString(card_w / 2, 3, "STUDENT IDENTIFICATION CARD · BITENDE JUNIOR SCHOOL")
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return buffer
