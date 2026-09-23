@@ -851,6 +851,7 @@ async function openNewTermModal() {
 const NAV = {
     superadmin: [
         { section: 'Overview' },
+        { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
         { label: 'Dashboard', icon: 'D', page: 'dashboard' },
         { section: 'Administration' },
         { label: 'User Accounts', icon: 'U', page: 'users' },
@@ -893,6 +894,7 @@ const NAV = {
     ], 
     director: [
         { section: 'Overview' },
+        { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
         { label: 'Dashboard', icon: 'D', page: 'dashboard' },
         { section: 'Administration' },
         { label: 'User Accounts', icon: 'U', page: 'users' },
@@ -932,6 +934,7 @@ const NAV = {
     ],
     admin: [
         { section: 'Overview' },
+        { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
         { label: 'Dashboard', icon: 'D', page: 'dashboard' },
         { section: 'Students' },
         { label: 'All Students', icon: 'S', page: 'students' },
@@ -968,6 +971,7 @@ const NAV = {
     ], 
     headteacher: [
         { section: 'Overview' },
+        { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
         { label: 'Dashboard', icon: 'D', page: 'dashboard' },
         { section: 'Students' },
         { label: 'All Students', icon: 'S', page: 'students' },
@@ -997,6 +1001,7 @@ const NAV = {
     ],
     deputy: [
         { section: 'Overview' },
+        { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
         { label: 'Dashboard', icon: 'D', page: 'dashboard' },
         { section: 'Students' },
         { label: 'All Students', icon: 'S', page: 'students' },
@@ -1012,6 +1017,7 @@ const NAV = {
     ],
     dos: [
         { section: 'Overview' },
+        { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
         { label: 'Dashboard', icon: 'D', page: 'dashboard' },
         { section: 'Academic' },
         { label: 'Students', icon: 'S', page: 'students' },
@@ -1035,6 +1041,7 @@ const NAV = {
     bursar: [{ section: 'Finance' }, { label: 'Fees', icon: 'F', page: 'fees' }, { label: 'Class Charges', icon: 'CH', page: 'charges' }, { label: 'Payments', icon: '$', page: 'finance' }, { label: 'Cashbook', icon: 'CB', page: 'cashbook' }, { label: 'Approvals', icon: 'AP', page: 'approvals' }, { label: 'Installments', icon: 'IP', page: 'installment_plans' }, { label: 'Fee Promises', icon: 'FP', page: 'fee_promises' }, { label: 'Deposits', icon: 'DP', page: 'deposits' }, { label: 'Expenses', icon: 'EX', page: 'expenses' }, { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' }, { label: 'Payroll & Profit', icon: 'PP', page: 'payroll' }, { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' }, { label: 'Settings', icon: 'S', page: 'settings' }],
     teacher: [
         { section: 'Overview' },
+        { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
         { label: 'My Dashboard', icon: 'D', page: 'dashboard' },
         { label: 'My Timetable', icon: 'TT', page: 'timetable' },
         { section: 'Academic' },
@@ -1055,6 +1062,7 @@ const NAV = {
     student: [{ section: 'School' }, { label: 'My Dashboard', icon: 'D', page: 'dashboard' }, { label: 'My Fees', icon: '$', page: 'my_fees' }, { label: 'Timetable', icon: 'TT', page: 'timetable' }, { label: 'Events', icon: 'EV', page: 'events' }, { label: 'Announcements', icon: 'AN', page: 'announcements' }, { label: 'Settings', icon: 'S', page: 'settings' }],
     reception: [
         { section: 'Overview' },
+        { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
         { label: 'Dashboard', icon: 'D', page: 'dashboard' },
         { label: 'Students', icon: 'S', page: 'students' },
         { label: 'Guardian Links', icon: 'GL', page: 'guardian_links' },
