@@ -1469,9 +1469,7 @@ class TeacherSalary(models.Model):
         ]
 
     def __str__(self):
-        teacher_user = getattr(self.teacher, 'user', None)
-        teacher_pk = getattr(self.teacher, 'pk', None)
-        teacher_name = teacher_user.get_full_name() if teacher_user else f'Teacher #{teacher_pk or "N/A"}'
+        teacher_name = str(self.teacher) if self.teacher else 'N/A'
         return f"{teacher_name} - {self.base_salary} ({self.payment_status})"
 
 
@@ -1500,9 +1498,7 @@ class TeacherAllowance(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        teacher_user = getattr(self.teacher, 'user', None)
-        teacher_pk = getattr(self.teacher, 'pk', None)
-        teacher_name = teacher_user.get_full_name() if teacher_user else f'Teacher #{teacher_pk or "N/A"}'
+        teacher_name = str(self.teacher) if self.teacher else 'N/A'
         allowance_label = dict(self.ALLOWANCE_TYPE_CHOICES).get(self.allowance_type, self.allowance_type)
         return f"{teacher_name} - {allowance_label}"
 
@@ -1592,9 +1588,28 @@ class StaffPayroll(models.Model):
     def __str__(self):
         staff_name = ""
         if self.teacher:
-            teacher_user = getattr(self.teacher, 'user', None)
-            teacher_pk = getattr(self.teacher, 'pk', None)
-            staff_name = teacher_user.get_full_name() if teacher_user else f'Teacher #{teacher_pk or "N/A"}'
+            staff_name = str(self.teacher)
         elif self.other_staff:
             staff_name = f"{self.other_staff.first_name} {self.other_staff.last_name}"
         return f"Payroll: {staff_name} - {self.net_amount} ({self.payment_status})"
+
+
+class ChatMessage(models.Model):
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_chat_messages')
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_chat_messages', null=True, blank=True)
+    room = models.CharField(max_length=80, blank=True, null=True, db_index=True)
+    message = models.TextField()
+    attachment_url = models.URLField(blank=True, null=True)
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['room', 'created_at']),
+            models.Index(fields=['sender', 'recipient', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"Chat from {self.sender.username} at {self.created_at:%Y-%m-%d %H:%M}"

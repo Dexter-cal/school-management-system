@@ -4,6 +4,7 @@ from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from .models import (
+    ChatMessage,
     SchoolClass, Subject, ClassSubject, Teacher, Student, FeeStructure, Mark, Attendance, Timetable, UserProfile,
     AcademicTerm, PromotionAudit, AlumniRegister, OTP, IDCounter, GradingScale, UserSession, SecurityAuditLog, APICredential,
     APICredentialHealthLog,
@@ -392,14 +393,16 @@ class GradingScaleSerializer(serializers.ModelSerializer):
         if normalized[-1]['max_score'] != 100:
             raise serializers.ValidationError('The last grading band must end at 100.')
 
-        expected_min = 0
-        for row in normalized:
-            if row['min_score'] != expected_min:
-                prev = expected_min - 1
-                if row['min_score'] <= prev:
-                    raise serializers.ValidationError(f'Band "{row["grade"]}" overlaps another band.')
+        prev_max = 0
+        for idx, row in enumerate(normalized):
+            if idx == 0:
+                prev_max = row['max_score']
+                continue
+            if row['min_score'] < prev_max:
+                raise serializers.ValidationError(f'Band "{row["grade"]}" overlaps another band.')
+            if row['min_score'] > prev_max + 1:
                 raise serializers.ValidationError(f'There is a gap before band "{row["grade"]}".')
-            expected_min = row['max_score'] + 1
+            prev_max = row['max_score']
 
         return normalized
     
@@ -971,8 +974,12 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
     def get_teacher_name(self, obj):
-        if obj.teacher and obj.teacher.user:
-            return obj.teacher.user.get_full_name()
+        if obj.teacher:
+            name = f"{obj.teacher.first_name} {obj.teacher.last_name}".strip()
+            if name:
+                return name
+            if obj.teacher.user:
+                return obj.teacher.user.get_full_name() or obj.teacher.user.username
         return "N/A"
 
 
@@ -987,8 +994,12 @@ class TeacherAllowanceSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
     def get_teacher_name(self, obj):
-        if obj.teacher and obj.teacher.user:
-            return obj.teacher.user.get_full_name()
+        if obj.teacher:
+            name = f"{obj.teacher.first_name} {obj.teacher.last_name}".strip()
+            if name:
+                return name
+            if obj.teacher.user:
+                return obj.teacher.user.get_full_name() or obj.teacher.user.username
         return "N/A"
 
 
@@ -1014,11 +1025,33 @@ class StaffPayrollSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
     def get_teacher_name(self, obj):
-        if obj.teacher and obj.teacher.user:
-            return obj.teacher.user.get_full_name()
+        if obj.teacher:
+            name = f"{obj.teacher.first_name} {obj.teacher.last_name}".strip()
+            if name:
+                return name
+            if obj.teacher.user:
+                return obj.teacher.user.get_full_name() or obj.teacher.user.username
         return None
 
     def get_other_staff_name(self, obj):
         if obj.other_staff:
             return f"{obj.other_staff.first_name} {obj.other_staff.last_name}"
         return None
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    sender_username = serializers.CharField(source='sender.username', read_only=True)
+    sender_full_name = serializers.SerializerMethodField(read_only=True)
+    sender_role = serializers.CharField(source='sender.profile.role', read_only=True)
+    recipient_username = serializers.CharField(source='recipient.username', read_only=True, allow_null=True)
+
+    class Meta:
+        model = ChatMessage
+        fields = '__all__'
+        read_only_fields = ('sender', 'created_at', 'is_read', 'read_at')
+
+    def get_sender_full_name(self, obj):
+        if obj.sender:
+            name = f"{obj.sender.first_name} {obj.sender.last_name}".strip()
+            return name or obj.sender.username
+        return "N/A"

@@ -21,7 +21,17 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
+from django.http import HttpResponse
+
+def security_txt(request):
+    content = """Contact: mailto:security@bitende.com
+Expires: 2027-12-31T23:59:59.000Z
+Preferred-Languages: en
+"""
+    return HttpResponse(content, content_type="text/plain")
+
 urlpatterns = [
+    path(".well-known/security.txt", security_txt),
     path("admin/", admin.site.urls),
     path("accounts/", include("allauth.urls")),
     path("accounts/google/", include("allauth.socialaccount.providers.google.urls")),

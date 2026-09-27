@@ -219,3 +219,46 @@ button,input,select,textarea{font-family:'Outfit',sans-serif}
 .mini-bar-item{min-width:44px;display:flex;flex-direction:column;align-items:center;gap:5px}
 .mini-bar-bar{width:100%;border-radius:12px;background:linear-gradient(180deg,var(--g),var(--m));box-shadow:0 6px 18px rgba(122,0,0,.12)}
 .mini-bar-lbl{font-size:10px;color:var(--99)}
+
+
+/* RESPONSIVE & MOBILE SCREEN FIT */
+@media (max-width: 900px) {
+  .s4, .s3, .s2, .g21, .g11, .g3, .fr.c2, .fr.c3 {
+    grid-template-columns: 1fr !important;
+  }
+  .page {
+    padding: 12px;
+  }
+  .modal, .modal.w, .modal.xl {
+    max-width: 100% !important;
+    margin: 10px;
+  }
+  .tbham {
+    display: flex !important;
+  }
+  .sidebar {
+    position: fixed;
+    top: var(--tb);
+    bottom: 0;
+    left: 0;
+    z-index: 400;
+    transform: translateX(-100%);
+    transition: transform .28s ease;
+  }
+  .sidebar.show {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .sc-num {
+    font-size: 24px;
+  }
+  .ph-title {
+    font-size: 22px;
+  }
+  .tbl th, .tbl td {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+}
