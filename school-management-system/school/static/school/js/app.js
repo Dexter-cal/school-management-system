@@ -3541,20 +3541,27 @@ async function loadPage(page, el, label) {
         ]);
 
         let activeContactId = (contacts[0] && contacts[0].id) ? contacts[0].id : null;
+        let searchQuery = '';
 
         const renderChatPage = (selectedId) => {
             const selectedUser = contacts.find(c => c.id == selectedId) || contacts[0] || { name: 'Chat', id: null };
             activeContactId = selectedUser.id;
 
-            const contactRows = contacts.map(c => `
-              <div class="ri" style="cursor:pointer;padding:10px 12px;border-radius:8px;background:${c.id == activeContactId ? 'var(--mll2)' : 'transparent'}" onclick="window.switchChatContact(${c.id})">
-                <div class="av av-sm r" style="font-weight:700">${escapeHtml((c.name || 'U').substring(0, 2).toUpperCase())}</div>
-                <div class="ri-info">
-                  <div class="rn">${escapeHtml(c.name || 'User')}</div>
-                  <div class="rd" style="text-transform:capitalize">${escapeHtml(c.role || 'user')}</div>
+            const filteredContacts = contacts.filter(c => {
+                if (!searchQuery) return true;
+                const q = searchQuery.toLowerCase();
+                return (c.name || '').toLowerCase().includes(q) || (c.role || '').toLowerCase().includes(q) || (c.username || '').toLowerCase().includes(q);
+            });
+
+            const contactRows = filteredContacts.map(c => `
+              <div class="ri" style="cursor:pointer;padding:10px 12px;border-radius:10px;margin-bottom:2px;background:${c.id == activeContactId ? 'var(--mll2)' : 'transparent'};transition:all .15s" onclick="window.switchChatContact(${c.id})">
+                <div class="av av-sm r" style="font-weight:800;background:${c.id == activeContactId ? 'var(--m)' : 'var(--f0)'};color:${c.id == activeContactId ? '#fff' : 'var(--1a)'}">${escapeHtml((c.name || 'U').substring(0, 2).toUpperCase())}</div>
+                <div class="ri-info" style="flex:1">
+                  <div class="rn" style="font-weight:700">${escapeHtml(c.name || 'User')}</div>
+                  <div class="rd" style="text-transform:capitalize;font-size:11px;color:var(--66)">${escapeHtml(c.role || 'user')}</div>
                 </div>
               </div>
-            `).join('') || '<div class="sub" style="padding:10px">No contacts found</div>';
+            `).join('') || '<div class="sub" style="padding:16px;text-align:center">No contacts found</div>';
 
             const filteredMsgs = (messages || []).filter(m => (m.sender == activeContactId || m.recipient == activeContactId || (m.sender == currentUser.id && m.recipient == activeContactId)));
             filteredMsgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -3562,27 +3569,41 @@ async function loadPage(page, el, label) {
             const msgRows = filteredMsgs.map(m => {
                 const isMe = m.sender == currentUser.id;
                 return `
-                  <div style="display:flex;justify-content:${isMe ? 'flex-end' : 'flex-start'};margin-bottom:10px">
-                    <div style="max-width:70%;padding:10px 14px;border-radius:12px;background:${isMe ? 'var(--m)' : 'var(--f0)'};color:${isMe ? '#fff' : 'var(--1a)'}">
-                      <div style="font-size:11px;font-weight:700;margin-bottom:2px;opacity:0.8">${escapeHtml(isMe ? 'You' : (m.sender_full_name || m.sender_username))}</div>
-                      <div style="font-size:13px;white-space:pre-wrap">${escapeHtml(m.message || '')}</div>
-                      <div style="font-size:10px;margin-top:4px;opacity:0.6;text-align:right">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                  <div style="display:flex;justify-content:${isMe ? 'flex-end' : 'flex-start'};margin-bottom:12px">
+                    <div style="max-width:75%;padding:11px 16px;border-radius:${isMe ? '16px 16px 2px 16px' : '16px 16px 16px 2px'};background:${isMe ? 'linear-gradient(135deg,var(--m),var(--ml))' : 'var(--w)'};color:${isMe ? '#fff' : 'var(--1a)'};box-shadow:${isMe ? '0 3px 12px rgba(122,0,0,.2)' : '0 2px 8px rgba(0,0,0,.06)'};border:${isMe ? 'none' : '1px solid var(--e)'}">
+                      <div style="font-size:11px;font-weight:700;margin-bottom:3px;opacity:0.85;display:flex;justify-content:space-between;gap:12px">
+                        <span>${escapeHtml(isMe ? 'You' : (m.sender_full_name || m.sender_username))}</span>
+                        <span style="font-size:9px;font-weight:400;opacity:0.7">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                      </div>
+                      <div style="font-size:13px;line-height:1.45;white-space:pre-wrap">${escapeHtml(m.message || '')}</div>
                     </div>
                   </div>
                 `;
-            }).join('') || '<div class="sub" style="text-align:center;padding:30px">No messages yet. Send a message to start chatting!</div>';
+            }).join('') || '<div class="sub" style="text-align:center;padding:40px 16px"><div style="font-size:32px;margin-bottom:8px">💬</div><div style="font-weight:700">No messages yet</div><div>Send a quick response or question to start the conversation!</div></div>';
 
             main.innerHTML = `
               <div class="page">
-                <div class="ph"><div class="ph-title">Chat & In-App Messaging</div><div class="ph-sub">Connect with teachers, school administrators, and parents</div></div>
-                <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;min-height:540px">
-                  <div class="card"><div class="card-h"><div class="card-t">Contacts</div></div><div class="card-b np"><div style="display:flex;flex-direction:column;padding:8px">${contactRows}</div></div></div>
+                <div class="ph"><div class="ph-title">Chat & In-App Messaging</div><div class="ph-sub">Direct conversation between teachers, school administrators, and parents</div></div>
+                <div style="display:grid;grid-template-columns:minmax(260px, 320px) 1fr;gap:16px;min-height:560px">
                   <div class="card" style="display:flex;flex-direction:column">
-                    <div class="card-h"><div class="card-t">${escapeHtml(selectedUser.name || 'Chat')}</div></div>
-                    <div class="card-b" id="chat-box-body" style="flex:1;overflow-y:auto;max-height:420px;padding:16px">${msgRows}</div>
-                    <div style="padding:12px 16px;border-top:1px solid var(--f0);display:flex;gap:10px">
-                      <input class="fin2" id="chat-input-msg" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendChatMessage(${activeContactId})">
-                      <button class="btn btn-p" onclick="sendChatMessage(${activeContactId})">Send</button>
+                    <div class="card-h" style="padding:12px 16px"><div class="card-t">Contacts</div></div>
+                    <div style="padding:8px 12px;border-bottom:1px solid var(--f0)">
+                      <input class="fin2" id="chat-search-input" value="${escapeHtml(searchQuery)}" placeholder="🔍 Search contacts..." oninput="window.filterChatContacts(this.value)" style="font-size:12px;padding:7px 10px">
+                    </div>
+                    <div class="card-b np" style="flex:1;overflow-y:auto;max-height:480px"><div style="padding:6px 8px">${contactRows}</div></div>
+                  </div>
+                  <div class="card" style="display:flex;flex-direction:column;background:var(--f8)">
+                    <div class="card-h" style="background:#fff"><div class="card-t" style="display:flex;align-items:center;gap:8px"><div class="av av-sm r" style="font-weight:800">${escapeHtml((selectedUser.name || 'C').substring(0, 2).toUpperCase())}</div><span>${escapeHtml(selectedUser.name || 'Chat')}</span> <span class="bdg g" style="font-size:10px">${escapeHtml(selectedUser.role || 'User')}</span></div></div>
+                    <div class="card-b" id="chat-box-body" style="flex:1;overflow-y:auto;max-height:420px;padding:20px 16px">${msgRows}</div>
+                    <div style="padding:10px 16px;background:#fff;border-top:1px solid var(--f0);display:flex;gap:6px;flex-wrap:wrap">
+                      <button class="btn btn-xs btn-gh" onclick="window.insertQuickReply('👍 Thank you!')">👍 Thank you</button>
+                      <button class="btn btn-xs btn-gh" onclick="window.insertQuickReply('✅ Confirmed')">✅ Confirmed</button>
+                      <button class="btn btn-xs btn-gh" onclick="window.insertQuickReply('🙏 Received')">🙏 Received</button>
+                      <button class="btn btn-xs btn-gh" onclick="window.insertQuickReply('📞 Please call me when available')">📞 Call me</button>
+                    </div>
+                    <div style="padding:12px 16px;background:#fff;border-top:1px solid var(--f0);display:flex;gap:10px;align-items:center">
+                      <input class="fin2" id="chat-input-msg" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendChatMessage(${activeContactId})" style="flex:1">
+                      <button class="btn btn-p" onclick="sendChatMessage(${activeContactId})">Send ➢</button>
                     </div>
                   </div>
                 </div>
@@ -3590,6 +3611,18 @@ async function loadPage(page, el, label) {
             `;
             const box = document.getElementById('chat-box-body');
             if (box) box.scrollTop = box.scrollHeight;
+        };
+
+        window.filterChatContacts = (q) => {
+            searchQuery = q;
+            renderChatPage(activeContactId);
+            const input = document.getElementById('chat-search-input');
+            if (input) { input.focus(); input.setSelectionRange(q.length, q.length); }
+        };
+
+        window.insertQuickReply = (text) => {
+            const input = document.getElementById('chat-input-msg');
+            if (input) { input.value = text; input.focus(); }
         };
 
         window.switchChatContact = (id) => renderChatPage(id);
