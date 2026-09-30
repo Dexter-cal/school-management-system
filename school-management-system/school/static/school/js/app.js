@@ -1038,7 +1038,7 @@ const NAV = {
         { section: 'System' },
         { label: 'Settings', icon: 'S', page: 'settings' },
     ],
-    bursar: [{ section: 'Finance' }, { label: 'Fees', icon: 'F', page: 'fees' }, { label: 'Class Charges', icon: 'CH', page: 'charges' }, { label: 'Payments', icon: '$', page: 'finance' }, { label: 'Cashbook', icon: 'CB', page: 'cashbook' }, { label: 'Approvals', icon: 'AP', page: 'approvals' }, { label: 'Installments', icon: 'IP', page: 'installment_plans' }, { label: 'Fee Promises', icon: 'FP', page: 'fee_promises' }, { label: 'Deposits', icon: 'DP', page: 'deposits' }, { label: 'Expenses', icon: 'EX', page: 'expenses' }, { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' }, { label: 'Payroll & Profit', icon: 'PP', page: 'payroll' }, { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' }, { label: 'Settings', icon: 'S', page: 'settings' }],
+    bursar: [{ section: 'Overview' }, { label: 'Chat & Messages', icon: 'CH', page: 'chat' }, { section: 'Finance' }, { label: 'Fees', icon: 'F', page: 'fees' }, { label: 'Class Charges', icon: 'CH', page: 'charges' }, { label: 'Payments', icon: '$', page: 'finance' }, { label: 'Cashbook', icon: 'CB', page: 'cashbook' }, { label: 'Approvals', icon: 'AP', page: 'approvals' }, { label: 'Installments', icon: 'IP', page: 'installment_plans' }, { label: 'Fee Promises', icon: 'FP', page: 'fee_promises' }, { label: 'Deposits', icon: 'DP', page: 'deposits' }, { label: 'Expenses', icon: 'EX', page: 'expenses' }, { label: 'Adjustments', icon: 'ADJ', page: 'adjustments' }, { label: 'Payroll & Profit', icon: 'PP', page: 'payroll' }, { label: 'Delivery Logs', icon: 'DL', page: 'delivery_logs' }, { label: 'Settings', icon: 'S', page: 'settings' }],
     teacher: [
         { section: 'Overview' },
         { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
@@ -1058,8 +1058,8 @@ const NAV = {
         { section: 'System' },
         { label: 'Settings', icon: 'S', page: 'settings' },
     ],
-    parent: [{ section: 'Home' }, { label: 'Child Dashboard', icon: 'D', page: 'dashboard' }, { label: 'Fees & Payments', icon: '$', page: 'my_fees' }, { label: 'Events', icon: 'EV', page: 'events' }, { label: 'Announcements', icon: 'AN', page: 'announcements' }, { label: 'Settings', icon: 'S', page: 'settings' }],
-    student: [{ section: 'School' }, { label: 'My Dashboard', icon: 'D', page: 'dashboard' }, { label: 'My Fees', icon: '$', page: 'my_fees' }, { label: 'Timetable', icon: 'TT', page: 'timetable' }, { label: 'Events', icon: 'EV', page: 'events' }, { label: 'Announcements', icon: 'AN', page: 'announcements' }, { label: 'Settings', icon: 'S', page: 'settings' }],
+    parent: [{ section: 'Home' }, { label: 'Chat & Messages', icon: 'CH', page: 'chat' }, { label: 'Child Dashboard', icon: 'D', page: 'dashboard' }, { label: 'Fees & Payments', icon: '$', page: 'my_fees' }, { label: 'Events', icon: 'EV', page: 'events' }, { label: 'Announcements', icon: 'AN', page: 'announcements' }, { label: 'Settings', icon: 'S', page: 'settings' }],
+    student: [{ section: 'School' }, { label: 'Chat & Messages', icon: 'CH', page: 'chat' }, { label: 'My Dashboard', icon: 'D', page: 'dashboard' }, { label: 'My Fees', icon: '$', page: 'my_fees' }, { label: 'Timetable', icon: 'TT', page: 'timetable' }, { label: 'Events', icon: 'EV', page: 'events' }, { label: 'Announcements', icon: 'AN', page: 'announcements' }, { label: 'Settings', icon: 'S', page: 'settings' }],
     reception: [
         { section: 'Overview' },
         { label: 'Chat & Messages', icon: 'CH', page: 'chat' },
@@ -3611,6 +3611,24 @@ async function loadPage(page, el, label) {
         };
 
         renderChatPage(activeContactId);
+
+        // Auto-poll new chat messages every 3.5s
+        if (window.chatPollTimer) clearInterval(window.chatPollTimer);
+        window.chatPollTimer = setInterval(async () => {
+            const box = document.getElementById('chat-box-body');
+            if (!box) {
+                clearInterval(window.chatPollTimer);
+                return;
+            }
+            try {
+                const latest = await API.fetch('/chat-messages/').catch(() => []);
+                if (latest && latest.length > messages.length) {
+                    messages.length = 0;
+                    messages.push(...latest);
+                    renderChatPage(activeContactId);
+                }
+            } catch (e) {}
+        }, 3500);
 
     } else if (page === 'announcements') {
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
