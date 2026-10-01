@@ -3611,6 +3611,8 @@ class MarkViewSet(viewsets.ModelViewSet):
                     continue
                 try:
                     score = int(it.get('score'))
+                    if score < 0 or score > 100:
+                        continue
                 except Exception:
                     continue
                 remarks = (it.get('remarks') or '').strip() or None
