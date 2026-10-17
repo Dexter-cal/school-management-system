@@ -23,6 +23,7 @@ from .models import (
     AcademicTerm,
     Attendance,
     CashbookClose,
+    ChatMessage,
     DepositBatch,
     DocumentDraft,
     Expense,
@@ -1915,3 +1916,44 @@ class RegistrationAndCommunicationTests(BaseSchoolTestCase):
         self.assertEqual(preview.status_code, 200)
         self.assertTrue(preview.data['preview']['body_html'])
         self.assertTrue(preview.data['preview']['body_text'])
+
+
+
+class ChatAccessTests(BaseSchoolTestCase):
+    def test_parent_can_find_school_staff_in_contacts(self):
+        parent = self.create_user('parent_chat', 'StrongPass123!', 'parent')
+        staff_roles = ['teacher', 'admin', 'superadmin', 'director', 'headteacher', 'deputy', 'dos', 'bursar', 'reception']
+        staff = [self.create_user(f'staff_{role}', 'StrongPass123!', role) for role in staff_roles]
+        self.create_user('other_parent_chat', 'StrongPass123!', 'parent')
+        self.client.force_authenticate(user=parent)
+
+        response = self.client.get('/api/chat-messages/contacts/')
+
+        self.assertEqual(response.status_code, 200)
+        returned_ids = {item['id'] for item in response.json()}
+        self.assertEqual(returned_ids, {u.id for u in staff})
+        self.assertNotIn(parent.id, returned_ids)
+
+    def test_room_messages_are_not_visible_to_unrelated_users(self):
+        sender = self.create_user('room_sender', 'StrongPass123!', 'teacher')
+        outsider = self.create_user('room_outsider', 'StrongPass123!', 'parent')
+        ChatMessage.objects.create(sender=sender, room='staff-only', message='Private staff note')
+        self.client.force_authenticate(user=outsider)
+
+        response = self.client.get('/api/chat-messages/?room=staff-only')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+    def test_parent_can_mark_incoming_chat_messages_read(self):
+        teacher = self.create_user('read_teacher', 'StrongPass123!', 'teacher')
+        parent = self.create_user('read_parent', 'StrongPass123!', 'parent')
+        message = ChatMessage.objects.create(sender=teacher, recipient=parent, message='Hello')
+        self.client.force_authenticate(user=parent)
+
+        response = self.client.post('/api/chat-messages/mark-read/', {'sender_id': teacher.id}, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        message.refresh_from_db()
+        self.assertTrue(message.is_read)
+        self.assertIsNotNone(message.read_at)
