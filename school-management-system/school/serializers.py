@@ -247,6 +247,11 @@ class PrintQueueItemSerializer(serializers.ModelSerializer):
         return None
 
 class MarkSerializer(serializers.ModelSerializer):
+    def validate_score(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError('Score must be between 0 and 100.')
+        return value
+
     class Meta:
         model = Mark
         fields = '__all__'
@@ -398,7 +403,7 @@ class GradingScaleSerializer(serializers.ModelSerializer):
             if idx == 0:
                 prev_max = row['max_score']
                 continue
-            if row['min_score'] < prev_max:
+            if row['min_score'] <= prev_max:
                 raise serializers.ValidationError(f'Band "{row["grade"]}" overlaps another band.')
             if row['min_score'] > prev_max + 1:
                 raise serializers.ValidationError(f'There is a gap before band "{row["grade"]}".')
