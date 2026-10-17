@@ -11617,14 +11617,15 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
         recipient_id = (self.request.query_params.get('recipient') or '').strip()
 
         if room:
-            return qs.filter(room=room)
+            # No room-membership model exists yet, so scope room reads to participants.
+            return qs.filter(room=room).filter(Q(sender=user) | Q(recipient=user)).order_by('created_at')
         if recipient_id.isdigit():
             other_id = int(recipient_id)
             return qs.filter(
                 (Q(sender=user) & Q(recipient_id=other_id)) |
                 (Q(sender_id=other_id) & Q(recipient=user))
             )
-        return qs.filter(Q(sender=user) | Q(recipient=user) | Q(room__isnull=False)).order_by('-created_at')[:100]
+        return qs.filter(Q(sender=user) | Q(recipient=user)).order_by('-created_at')[:100]
 
     def perform_create(self, serializer):
         msg = serializer.save(sender=self.request.user)
@@ -11641,18 +11642,33 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
+    @action(detail=False, methods=['post'], url_path='mark-read')
+    def mark_read(self, request):
+        sender_id = request.data.get('sender_id')
+        if not str(sender_id or '').isdigit():
+            return Response({'detail': 'sender_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        updated = ChatMessage.objects.filter(
+            sender_id=int(sender_id), recipient=request.user, is_read=False
+        ).update(is_read=True, read_at=timezone.now())
+        return Response({'updated': updated}, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], url_path='contacts')
     def contacts(self, request):
         user = request.user
         role = get_role(user)
         users = User.objects.select_related('profile').filter(is_active=True).exclude(id=user.id)
         if role == 'parent':
-            users = users.filter(profile__role__in=['teacher', 'admin', 'superadmin', 'headteacher', 'dos', 'bursar'])
+            users = users.filter(profile__role__in=[
+                'teacher', 'admin', 'superadmin', 'director', 'headteacher',
+                'deputy', 'dos', 'bursar', 'reception',
+            ])
         elif role == 'student':
-            users = users.filter(profile__role__in=['teacher', 'admin', 'superadmin', 'headteacher', 'dos'])
+            users = users.filter(profile__role__in=[
+                'teacher', 'admin', 'superadmin', 'director', 'headteacher', 'deputy', 'dos',
+            ])
 
         data = []
-        for u in users[:50]:
+        for u in users.order_by('first_name', 'last_name', 'username')[:100]:
             name = f"{u.first_name} {u.last_name}".strip() or u.username
             data.append({
                 'id': u.id,
