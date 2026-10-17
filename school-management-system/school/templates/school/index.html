@@ -1073,8 +1073,8 @@ body:not([data-boot]) #login-screen{animation:loginAutoShow 0.01s linear 4s forw
 <!-- Cache-bust to avoid stale SPA JS after deployments/edits. -->
 <script src="{% static 'school/js/app.js' %}?v=20261017_chatfix1" defer></script>
 <script>
-    const svgEye = "<img src=\"{% static 'admin/img/icon-view.svg' %}\" width=\"18\" height=\"18\" alt=\"\" aria-hidden=\"true\">";
-  const svgEyeOff = "<img src=\"{% static 'admin/img/icon-hide.svg' %}\" width=\"18\" height=\"18\" alt=\"\" aria-hidden=\"true\">";
+    const svgEye = "<img src=\"{% static 'admin/img/icon-viewlink.svg' %}\" width=\"18\" height=\"18\" alt=\"\" aria-hidden=\"true\">";
+  const svgEyeOff = "<img src=\"{% static 'admin/img/icon-hidelink.svg' %}\" width=\"18\" height=\"18\" alt=\"\" aria-hidden=\"true\">";
 
   function togglePasswordVisibility(fieldId, btn) {
     const input = document.getElementById(fieldId);
