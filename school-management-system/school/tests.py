@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.http import HttpResponse
+from django.core.cache import cache
 from django.test import Client
 from django.test import override_settings
 from django.utils import timezone
@@ -40,6 +41,7 @@ from .models import (
     Payment,
     PrintQueueItem,
     ResultsHoldLog,
+    SecurityAuditLog,
     SchoolClass,
     StaffPayroll,
     Student,
@@ -101,6 +103,9 @@ class BaseSchoolTestCase(APITestCase):
 
 class AuthSecurityTests(BaseSchoolTestCase):
     def setUp(self):
+        # LocMemCache is shared across test methods in the same test process.
+        # Clear rate-limit keys so one test cannot block another.
+        cache.clear()
         self.password = 'StrongPass123!'
         self.user = self.create_user(
             username='secureadmin',
@@ -142,6 +147,51 @@ class AuthSecurityTests(BaseSchoolTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('If an account exists', response.data['detail'])
 
+    @patch('school.views.send_sms', return_value=False)
+    @patch('school.views.send_email', return_value=False)
+    def test_password_reset_records_delivery_failure(self, mock_send_email, mock_send_sms):
+        response = self.client.post(
+            '/api/auth/request-password-reset/',
+            {'identifier': self.user.profile.email_address},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('If an account exists', response.data['detail'])
+        self.assertTrue(
+            SecurityAuditLog.objects.filter(
+                user=self.user,
+                event_type='OTP_REQUEST_FAILED',
+            ).exists()
+        )
+        mock_send_email.assert_called_once()
+        mock_send_sms.assert_called_once()
+
+    def test_user_without_role_cannot_list_student_records(self):
+        school_class = SchoolClass.objects.create(
+            level='P.3',
+            sections=['A'],
+            annual_fee=Decimal('100000.00'),
+            max_students_per_section=30,
+        )
+        student = self.create_student(
+            student_id='BJS-2026-SCOPE-1',
+            first_name='Scoped',
+            last_name='Student',
+            school_class=school_class,
+        )
+        unscoped_user = User.objects.create_user(
+            username='unscoped-user',
+            password='StrongPass123!',
+        )
+        self.client.force_authenticate(user=unscoped_user)
+
+        response = self.client.get('/api/students/')
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.data.get('results', response.data) if isinstance(response.data, dict) else response.data
+        self.assertFalse(any(row.get('id') == student.id for row in rows))
+
     def test_password_reset_rejects_weak_new_password(self):
         OTP.objects.create(
             user=self.user,
@@ -163,6 +213,45 @@ class AuthSecurityTests(BaseSchoolTestCase):
         self.assertIn('Password does not meet security requirements.', response.data['detail'])
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password(self.password))
+
+
+    def test_password_reset_request_is_rate_limited(self):
+        identifier = 'unknown-rate-limit@example.com'
+        responses = [
+            self.client.post(
+                '/api/auth/request-password-reset/',
+                {'identifier': identifier},
+                format='json',
+            )
+            for _ in range(6)
+        ]
+        self.assertTrue(all(response.status_code == 200 for response in responses))
+        self.assertIn('If an account exists', responses[-1].data['detail'])
+
+    def test_password_reset_confirmation_limits_invalid_otp_attempts(self):
+        identifier = self.user.profile.phone_number
+        for _ in range(10):
+            response = self.client.post(
+                '/api/auth/confirm-password-reset/',
+                {
+                    'identifier': identifier,
+                    'otp_code': '000000',
+                    'new_password': 'AnotherStrongPass456!',
+                },
+                format='json',
+            )
+            self.assertEqual(response.status_code, 400)
+
+        blocked = self.client.post(
+            '/api/auth/confirm-password-reset/',
+            {
+                'identifier': identifier,
+                'otp_code': '000000',
+                'new_password': 'AnotherStrongPass456!',
+            },
+            format='json',
+        )
+        self.assertEqual(blocked.status_code, 429)
 
 
 class APICredentialVerificationTests(BaseSchoolTestCase):
@@ -333,6 +422,22 @@ class GradingScaleValidationTests(BaseSchoolTestCase):
         self.assertEqual(ok.status_code, 201)
         self.assertEqual(ok.data['created_by'], self.director.id)
 
+    def test_overlapping_inclusive_grade_boundaries_are_rejected(self):
+        response = self.client.post(
+            '/api/grading-scales/',
+            {
+                'name': 'Overlapping Scale',
+                'scale_data': [
+                    {'grade': 'F9', 'min_score': 0, 'max_score': 39, 'points': 9},
+                    {'grade': 'P8', 'min_score': 39, 'max_score': 59, 'points': 8},
+                    {'grade': 'D1', 'min_score': 60, 'max_score': 100, 'points': 1},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('overlap', str(response.data).lower())
+
 
 class ReportCardAggregationTests(BaseSchoolTestCase):
     def setUp(self):
@@ -397,6 +502,23 @@ class ReportCardAggregationTests(BaseSchoolTestCase):
         Mark.objects.create(student=self.student_two, subject='English', score=42, term=2, year=2026, exam_type=self.endterm)
         Attendance.objects.create(student=self.student, date=date(2026, 5, 6), status='Present')
         self.client.force_authenticate(user=self.admin)
+
+    def test_mark_api_rejects_scores_outside_zero_to_one_hundred(self):
+        for score in (-1, 101):
+            with self.subTest(score=score):
+                response = self.client.post(
+                    '/api/marks/',
+                    {
+                        'student': self.student.pk,
+                        'subject': 'Mathematics',
+                        'score': score,
+                        'term': 2,
+                        'year': 2026,
+                    },
+                    format='json',
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('score', response.data)
 
     def test_summary_combines_exam_entries_by_subject(self):
         response = self.client.get(f'/api/report-cards/summary/{self.student.pk}/2/2026/')
@@ -668,7 +790,9 @@ class StaffCredentialDeliveryTests(BaseSchoolTestCase):
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response['Content-Type'], 'application/pdf')
 
-    def test_staff_user_create_auto_generates_readable_username_when_blank(self):
+    @patch('school.views.send_sms', return_value=False)
+    @patch('school.views.send_email', return_value=False)
+    def test_staff_user_create_auto_generates_readable_username_when_blank(self, mock_send_email, mock_send_sms):
         response = self.client.post(
             '/api/users/',
             {
@@ -684,6 +808,8 @@ class StaffCredentialDeliveryTests(BaseSchoolTestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['credentials']['username'], 'grace.nabwire')
+        mock_send_email.assert_called_once()
+        mock_send_sms.assert_called_once()
 
     def test_notification_filter_by_student_and_class_for_finance_alerts(self):
         school_class = SchoolClass.objects.create(

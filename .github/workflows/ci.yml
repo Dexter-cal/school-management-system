@@ -31,8 +31,12 @@ jobs:
       - name: Run Django checks
         working-directory: school-management-system
         run: |
-          python manage.py check --deploy || true
+          python manage.py check --deploy
           python manage.py check
+
+      - name: Run Django test suite
+        working-directory: school-management-system
+        run: python manage.py test school --verbosity 2
 
       - name: Validate static files collection
         working-directory: school-management-system

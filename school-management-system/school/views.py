@@ -2520,6 +2520,13 @@ class StudentViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         role = get_role(self.request.user)
 
+        # Unknown or missing roles must never fall through to the unrestricted
+        # student list. Known admin, bursar, and reception roles need the full
+        # list for their school duties; parent, teacher, and student are scoped
+        # below to their own linked records/classes.
+        if role not in {'superadmin', 'bursar', 'reception', 'teacher', 'parent', 'student'} and not is_admin_role(role):
+            return qs.none()
+
         if role == 'parent':
             phone = getattr(getattr(self.request.user, 'profile', None), 'phone_number', None)
             linked_ids = list(StudentGuardianLink.objects.filter(parent_user=self.request.user, is_active=True).values_list('student_id', flat=True))
@@ -4866,6 +4873,8 @@ class AuthViewSet(viewsets.ViewSet):
         ident_key = re.sub(r'[^a-zA-Z0-9@.+_-]', '_', str(identifier))[:80]
         rl_key = f'pwreset_rl:{ip_address}:{ident_key}'
         attempts = int(cache.get(rl_key, 0) or 0)
+        if attempts >= 5:
+            return Response({'detail': generic_detail}, status=status.HTTP_200_OK)
         cache.set(rl_key, attempts + 1, timeout=15 * 60)
 
         user, user_profile = resolve_user_and_profile(identifier)
@@ -4881,20 +4890,18 @@ class AuthViewSet(viewsets.ViewSet):
             sent = False
             if user_profile.email_address:
                 try:
-                    send_email(
+                    sent = bool(send_email(
                         subject='Password Reset OTP - Bitende Junior School',
                         recipient_list=[user_profile.email_address],
                         template_name='school/emails/otp_email.html',
                         context={'otp_code': otp_code, 'user_name': user.first_name or user.username}
-                    )
-                    sent = True
+                    ))
                 except Exception:
                     sent = False
             if user_profile.phone_number:
                 try:
                     sms_message = f'Your Bitende Junior School password reset code is {otp_code}. It expires in 15 minutes.'
-                    send_sms(user_profile.phone_number, sms_message)
-                    sent = True
+                    sent = bool(send_sms(user_profile.phone_number, sms_message)) or sent
                 except Exception:
                     pass
             if not sent:
@@ -4917,6 +4924,16 @@ class AuthViewSet(viewsets.ViewSet):
         if not identifier or not otp_code or not new_password:
             return Response({'detail': 'identifier, otp_code and new_password are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        ip_address = get_client_ip(request)
+        ident_key = re.sub(r'[^a-zA-Z0-9@.+_-]', '_', str(identifier))[:80]
+        rl_key = f'pwreset_confirm_rl:{ip_address}:{ident_key}'
+        attempts = int(cache.get(rl_key, 0) or 0)
+        if attempts >= 10:
+            return Response(
+                {'detail': 'Too many invalid OTP attempts. Request a new password-reset code and try again later.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         user, user_profile = resolve_user_and_profile(identifier)
         if not user_profile or not user_profile.user:
             return Response({'detail': 'Invalid identifier.'}, status=status.HTTP_404_NOT_FOUND)
@@ -4933,10 +4950,12 @@ class AuthViewSet(viewsets.ViewSet):
             user.save()
             valid_otp.is_used = True
             valid_otp.save()
-            SecurityAuditLog.objects.create(user=user, event_type='PASSWORD_RESET_SUCCESS', ip_address=get_client_ip(request), details=f'Password for {user.username} reset successfully.')
+            cache.delete(rl_key)
+            SecurityAuditLog.objects.create(user=user, event_type='PASSWORD_RESET_SUCCESS', ip_address=ip_address, details=f'Password for {user.username} reset successfully.')
             return Response({'detail': 'Password reset successfully. You can now log in with your new password.'}, status=status.HTTP_200_OK)
         else:
-            SecurityAuditLog.objects.create(user=user, event_type='OTP_INVALID_OR_EXPIRED', ip_address=get_client_ip(request), details=f'Invalid or expired OTP provided for {user.username}.')
+            cache.set(rl_key, attempts + 1, timeout=15 * 60)
+            SecurityAuditLog.objects.create(user=user, event_type='OTP_INVALID_OR_EXPIRED', ip_address=ip_address, details=f'Invalid or expired OTP provided for {user.username}.')
             return Response({'detail': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get', 'patch'])

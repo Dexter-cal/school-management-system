@@ -43,3 +43,8 @@ ehthumbs.db
 
 # JetBrains
 .idea/
+
+# Local diagnostics are not application source and may contain runtime details.
+school-management-system/logs/
+school-management-system/debug-test.html
+school-management-system/debug_index_script.js
