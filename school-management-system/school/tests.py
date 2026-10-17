@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.http import HttpResponse
+from django.core.cache import cache
 from django.test import Client
 from django.test import override_settings
 from django.utils import timezone
@@ -102,6 +103,9 @@ class BaseSchoolTestCase(APITestCase):
 
 class AuthSecurityTests(BaseSchoolTestCase):
     def setUp(self):
+        # LocMemCache is shared across test methods in the same test process.
+        # Clear rate-limit keys so one test cannot block another.
+        cache.clear()
         self.password = 'StrongPass123!'
         self.user = self.create_user(
             username='secureadmin',
