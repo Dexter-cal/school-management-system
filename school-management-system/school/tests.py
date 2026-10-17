@@ -165,6 +165,45 @@ class AuthSecurityTests(BaseSchoolTestCase):
         self.assertTrue(self.user.check_password(self.password))
 
 
+    def test_password_reset_request_is_rate_limited(self):
+        identifier = 'unknown-rate-limit@example.com'
+        responses = [
+            self.client.post(
+                '/api/auth/request-password-reset/',
+                {'identifier': identifier},
+                format='json',
+            )
+            for _ in range(6)
+        ]
+        self.assertTrue(all(response.status_code == 200 for response in responses))
+        self.assertIn('If an account exists', responses[-1].data['detail'])
+
+    def test_password_reset_confirmation_limits_invalid_otp_attempts(self):
+        identifier = self.user.profile.phone_number
+        for _ in range(10):
+            response = self.client.post(
+                '/api/auth/confirm-password-reset/',
+                {
+                    'identifier': identifier,
+                    'otp_code': '000000',
+                    'new_password': 'AnotherStrongPass456!',
+                },
+                format='json',
+            )
+            self.assertEqual(response.status_code, 400)
+
+        blocked = self.client.post(
+            '/api/auth/confirm-password-reset/',
+            {
+                'identifier': identifier,
+                'otp_code': '000000',
+                'new_password': 'AnotherStrongPass456!',
+            },
+            format='json',
+        )
+        self.assertEqual(blocked.status_code, 429)
+
+
 class APICredentialVerificationTests(BaseSchoolTestCase):
     def setUp(self):
         self.superadmin = self.create_user(
