@@ -757,7 +757,9 @@ class StaffCredentialDeliveryTests(BaseSchoolTestCase):
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response['Content-Type'], 'application/pdf')
 
-    def test_staff_user_create_auto_generates_readable_username_when_blank(self):
+    @patch('school.views.send_sms', return_value=False)
+    @patch('school.views.send_email', return_value=False)
+    def test_staff_user_create_auto_generates_readable_username_when_blank(self, mock_send_email, mock_send_sms):
         response = self.client.post(
             '/api/users/',
             {
@@ -773,6 +775,8 @@ class StaffCredentialDeliveryTests(BaseSchoolTestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['credentials']['username'], 'grace.nabwire')
+        mock_send_email.assert_called_once()
+        mock_send_sms.assert_called_once()
 
     def test_notification_filter_by_student_and_class_for_finance_alerts(self):
         school_class = SchoolClass.objects.create(
