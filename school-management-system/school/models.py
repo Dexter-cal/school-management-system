@@ -1607,8 +1607,8 @@ class ChatMessage(models.Model):
     class Meta:
         ordering = ['created_at']
         indexes = [
-            models.Index(fields=['room', 'created_at']),
-            models.Index(fields=['sender', 'recipient', 'created_at']),
+            models.Index(fields=['room', 'created_at'], name='school_chat_room_created_idx'),
+            models.Index(fields=['sender', 'recipient', 'created_at'], name='school_chat_sender_rec_idx'),
         ]
 
     def __str__(self):
