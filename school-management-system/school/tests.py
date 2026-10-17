@@ -422,6 +422,22 @@ class GradingScaleValidationTests(BaseSchoolTestCase):
         self.assertEqual(ok.status_code, 201)
         self.assertEqual(ok.data['created_by'], self.director.id)
 
+    def test_overlapping_inclusive_grade_boundaries_are_rejected(self):
+        response = self.client.post(
+            '/api/grading-scales/',
+            {
+                'name': 'Overlapping Scale',
+                'scale_data': [
+                    {'grade': 'F9', 'min_score': 0, 'max_score': 39, 'points': 9},
+                    {'grade': 'P8', 'min_score': 39, 'max_score': 59, 'points': 8},
+                    {'grade': 'D1', 'min_score': 60, 'max_score': 100, 'points': 1},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('overlap', str(response.data).lower())
+
 
 class ReportCardAggregationTests(BaseSchoolTestCase):
     def setUp(self):
@@ -486,6 +502,23 @@ class ReportCardAggregationTests(BaseSchoolTestCase):
         Mark.objects.create(student=self.student_two, subject='English', score=42, term=2, year=2026, exam_type=self.endterm)
         Attendance.objects.create(student=self.student, date=date(2026, 5, 6), status='Present')
         self.client.force_authenticate(user=self.admin)
+
+    def test_mark_api_rejects_scores_outside_zero_to_one_hundred(self):
+        for score in (-1, 101):
+            with self.subTest(score=score):
+                response = self.client.post(
+                    '/api/marks/',
+                    {
+                        'student': self.student.pk,
+                        'subject': 'Mathematics',
+                        'score': score,
+                        'term': 2,
+                        'year': 2026,
+                    },
+                    format='json',
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('score', response.data)
 
     def test_summary_combines_exam_entries_by_subject(self):
         response = self.client.get(f'/api/report-cards/summary/{self.student.pk}/2/2026/')
