@@ -3588,17 +3588,37 @@ async function loadPage(page, el, label) {
                 return (c.name || '').toLowerCase().includes(q) || (c.role || '').toLowerCase().includes(q) || (c.username || '').toLowerCase().includes(q);
             });
 
-            const contactRows = filteredContacts.map(c => `
+            const threadForContact = (contactId) => (messages || []).filter(m =>
+                (m.sender == currentUser.id && m.recipient == contactId) ||
+                (m.sender == contactId && m.recipient == currentUser.id)
+            ).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            filteredContacts.sort((a, b) => {
+                const aThread = threadForContact(a.id), bThread = threadForContact(b.id);
+                const aLast = aThread.length ? new Date(aThread[aThread.length - 1].created_at).getTime() : 0;
+                const bLast = bThread.length ? new Date(bThread[bThread.length - 1].created_at).getTime() : 0;
+                return bLast - aLast || String(a.name || a.username).localeCompare(String(b.name || b.username));
+            });
+            const contactRows = filteredContacts.map(c => {
+                const thread = threadForContact(c.id);
+                const last = thread.length ? thread[thread.length - 1] : null;
+                const unread = thread.filter(m => m.sender == c.id && m.recipient == currentUser.id && !m.is_read).length;
+                const time = last ? new Date(last.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+                const preview = last ? ((last.sender == currentUser.id ? 'You: ' : '') + (last.message || 'Attachment')) : (c.role || 'School contact');
+                return `
               <div class="ri" style="cursor:pointer;padding:10px 12px;border-radius:10px;margin-bottom:2px;background:${c.id == activeContactId ? 'var(--mll2)' : 'transparent'};transition:all .15s" onclick="window.switchChatContact(${c.id})">
-                <div class="av av-sm r" style="font-weight:800;background:${c.id == activeContactId ? 'var(--m)' : 'var(--f0)'};color:${c.id == activeContactId ? '#fff' : 'var(--1a)'}">${escapeHtml((c.name || 'U').substring(0, 2).toUpperCase())}</div>
-                <div class="ri-info" style="flex:1">
-                  <div class="rn" style="font-weight:700">${escapeHtml(c.name || 'User')}</div>
-                  <div class="rd" style="text-transform:capitalize;font-size:11px;color:var(--66)">${escapeHtml(c.role || 'user')}</div>
+                <div class="av av-sm r" style="font-weight:800;background:${c.id == activeContactId ? 'var(--m)' : 'var(--f0)'};color:${c.id == activeContactId ? '#fff' : 'var(--1a)'};flex-shrink:0">${escapeHtml((c.name || 'U').substring(0, 2).toUpperCase())}</div>
+                <div class="ri-info" style="flex:1;min-width:0">
+                  <div class="rn" style="font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name || 'User')}</div>
+                  <div class="rd" style="font-size:11px;color:var(--66);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.role || 'user')} · ${escapeHtml(preview)}</div>
                 </div>
-              </div>
-            `).join('') || '<div class="sub" style="padding:16px;text-align:center">No contacts found</div>';
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;font-size:10px;color:var(--99);flex-shrink:0"><span>${escapeHtml(time)}</span>${unread ? `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--gr);color:#fff;font-weight:800">${unread > 99 ? '99+' : unread}</span>` : ''}</div>
+              </div>`;
+            }).join('') || '<div class="sub" style="padding:16px;text-align:center">No contacts found</div>';
 
-            const filteredMsgs = (messages || []).filter(m => (m.sender == activeContactId || m.recipient == activeContactId || (m.sender == currentUser.id && m.recipient == activeContactId)));
+            const filteredMsgs = (messages || []).filter(m =>
+                (m.sender == currentUser.id && m.recipient == activeContactId) ||
+                (m.sender == activeContactId && m.recipient == currentUser.id)
+            );
             filteredMsgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
             const msgRows = filteredMsgs.map(m => {
@@ -3608,7 +3628,7 @@ async function loadPage(page, el, label) {
                     <div style="max-width:75%;padding:11px 16px;border-radius:${isMe ? '16px 16px 2px 16px' : '16px 16px 16px 2px'};background:${isMe ? 'linear-gradient(135deg,var(--m),var(--ml))' : 'var(--w)'};color:${isMe ? '#fff' : 'var(--1a)'};box-shadow:${isMe ? '0 3px 12px rgba(122,0,0,.2)' : '0 2px 8px rgba(0,0,0,.06)'};border:${isMe ? 'none' : '1px solid var(--e)'}">
                       <div style="font-size:11px;font-weight:700;margin-bottom:3px;opacity:0.85;display:flex;justify-content:space-between;gap:12px">
                         <span>${escapeHtml(isMe ? 'You' : (m.sender_full_name || m.sender_username))}</span>
-                        <span style="font-size:9px;font-weight:400;opacity:0.7">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                        <span style="font-size:9px;font-weight:400;opacity:0.7">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}${isMe ? (m.is_read ? ' ✓✓' : ' ✓') : ''}</span>
                       </div>
                       <div style="font-size:13px;line-height:1.45;white-space:pre-wrap">${escapeHtml(m.message || '')}</div>
                     </div>
