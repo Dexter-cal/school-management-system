@@ -115,8 +115,10 @@ const API = {
                 headers, 
             }); 
         } catch (err) { 
-            // Network failure: queue non-upload write requests for retry. 
-            if (!isSafe && !isFormData) { 
+            // Authentication endpoints can contain passwords, OTPs, and session actions.
+            // Never persist those requests in localStorage or replay them later.
+            const isSensitiveAuthRequest = /^\/auth(?:\/|$)/i.test(String(url || ''));
+            if (!isSafe && !isFormData && !isSensitiveAuthRequest) { 
                 this._enqueueOffline({ 
                     url, 
                     method, 
@@ -125,7 +127,10 @@ const API = {
                     ts: Date.now(), 
                 }); 
                 throw { detail: 'Network issue: action saved and will retry when online.' }; 
-            } 
+            }
+            if (isSensitiveAuthRequest) {
+                throw { detail: 'Connection failed. For your security, sign-in and account-recovery requests are not saved offline. Check your connection and try again.' };
+            }
             throw { detail: 'Network error. Please try again.' }; 
         } 
  
@@ -1189,7 +1194,10 @@ async function doLogin() {
         let msg = 'Login failed.';
         if (e && e.detail) msg = e.detail;
         else if (e && e.status) msg = e.status;
-        setLoginError(msg + ' (Tip: use only one address: either http://127.0.0.1:8000 or http://localhost:8000, not both)');
+        const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        setLoginError(isLocalHost
+            ? msg + ' (Tip: use only one address: either http://127.0.0.1:8000 or http://localhost:8000, not both)'
+            : msg);
     } finally {
         const btn = document.getElementById('login-btn');
         if (btn) { btn.disabled = false; btn.textContent = 'Sign In ->'; }
