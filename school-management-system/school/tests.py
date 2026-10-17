@@ -3,15 +3,18 @@
 # pylint: disable=all
 # type: ignore[attr-defined]  # DRF test client response typing incomplete
 import json
+from importlib import import_module
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, cast
 from unittest.mock import Mock, patch
 
+from django.apps import apps
 from django.contrib.auth.models import User
+from django.db import connection
 from django.http import HttpResponse
 from django.core.cache import cache
-from django.test import Client
+from django.test import Client, TransactionTestCase
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.response import Response
@@ -1957,3 +1960,21 @@ class ChatAccessTests(BaseSchoolTestCase):
         message.refresh_from_db()
         self.assertTrue(message.is_read)
         self.assertIsNotNone(message.read_at)
+
+
+class ChatMessageTableRepairMigrationTests(TransactionTestCase):
+    """Regression test for deployments where migration history outlives a missing table."""
+
+    def test_recreates_chat_table_when_table_is_missing(self):
+        migration = import_module("school.migrations.0040_repair_chatmessage_table")
+
+        with connection.schema_editor() as schema_editor:
+            schema_editor.delete_model(ChatMessage)
+
+        with connection.schema_editor() as schema_editor:
+            migration.ensure_chatmessage_table(apps, schema_editor)
+
+        self.assertIn(
+            ChatMessage._meta.db_table,
+            connection.introspection.table_names(),
+        )
