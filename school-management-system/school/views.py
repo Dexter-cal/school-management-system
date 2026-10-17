@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.contrib.auth import authenticate, login, logout
 from django.db.models import F, Avg, Q, Count, Sum, Max # Added for aggregation
-from django.db import transaction, IntegrityError # Added for atomic operations and DB error handling
+from django.db import transaction, IntegrityError, OperationalError # Added for atomic operations and DB error handling
 from datetime import date, timedelta, datetime # Added for date and time operations
 from django.utils import timezone # Added for timezone awareness
 
@@ -11609,6 +11609,20 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
     queryset = ChatMessage.objects.select_related('sender', 'sender__profile', 'recipient', 'recipient__profile').all()
     serializer_class = ChatMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def dispatch(self, request, *args, **kwargs):
+        """Return a safe, actionable response if chat storage is temporarily unavailable."""
+        try:
+            return super().dispatch(request, *args, **kwargs)
+        except OperationalError:
+            logger.exception("Chat API database operation failed")
+            return Response(
+                {
+                    'detail': 'Chat is temporarily unavailable because its storage is not ready. Please try again shortly. If the problem continues, contact the system administrator.',
+                    'code': 'chat_storage_unavailable',
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
     def get_queryset(self):
         user = self.request.user
