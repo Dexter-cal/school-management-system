@@ -4866,6 +4866,8 @@ class AuthViewSet(viewsets.ViewSet):
         ident_key = re.sub(r'[^a-zA-Z0-9@.+_-]', '_', str(identifier))[:80]
         rl_key = f'pwreset_rl:{ip_address}:{ident_key}'
         attempts = int(cache.get(rl_key, 0) or 0)
+        if attempts >= 5:
+            return Response({'detail': generic_detail}, status=status.HTTP_200_OK)
         cache.set(rl_key, attempts + 1, timeout=15 * 60)
 
         user, user_profile = resolve_user_and_profile(identifier)
@@ -4917,6 +4919,16 @@ class AuthViewSet(viewsets.ViewSet):
         if not identifier or not otp_code or not new_password:
             return Response({'detail': 'identifier, otp_code and new_password are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        ip_address = get_client_ip(request)
+        ident_key = re.sub(r'[^a-zA-Z0-9@.+_-]', '_', str(identifier))[:80]
+        rl_key = f'pwreset_confirm_rl:{ip_address}:{ident_key}'
+        attempts = int(cache.get(rl_key, 0) or 0)
+        if attempts >= 10:
+            return Response(
+                {'detail': 'Too many invalid OTP attempts. Request a new password-reset code and try again later.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         user, user_profile = resolve_user_and_profile(identifier)
         if not user_profile or not user_profile.user:
             return Response({'detail': 'Invalid identifier.'}, status=status.HTTP_404_NOT_FOUND)
@@ -4933,10 +4945,12 @@ class AuthViewSet(viewsets.ViewSet):
             user.save()
             valid_otp.is_used = True
             valid_otp.save()
-            SecurityAuditLog.objects.create(user=user, event_type='PASSWORD_RESET_SUCCESS', ip_address=get_client_ip(request), details=f'Password for {user.username} reset successfully.')
+            cache.delete(rl_key)
+            SecurityAuditLog.objects.create(user=user, event_type='PASSWORD_RESET_SUCCESS', ip_address=ip_address, details=f'Password for {user.username} reset successfully.')
             return Response({'detail': 'Password reset successfully. You can now log in with your new password.'}, status=status.HTTP_200_OK)
         else:
-            SecurityAuditLog.objects.create(user=user, event_type='OTP_INVALID_OR_EXPIRED', ip_address=get_client_ip(request), details=f'Invalid or expired OTP provided for {user.username}.')
+            cache.set(rl_key, attempts + 1, timeout=15 * 60)
+            SecurityAuditLog.objects.create(user=user, event_type='OTP_INVALID_OR_EXPIRED', ip_address=ip_address, details=f'Invalid or expired OTP provided for {user.username}.')
             return Response({'detail': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get', 'patch'])
