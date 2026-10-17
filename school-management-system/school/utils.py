@@ -119,9 +119,9 @@ def generate_random_password(length=12):
     return ''.join(password_chars)
 
 def generate_otp(length=6):
-    digits = string.digits
-    otp = ''.join(random.choice(digits) for i in range(length))
-    return otp
+    """Generate a cryptographically secure numeric one-time password."""
+    size = max(1, int(length or 6))
+    return ''.join(secrets.choice(string.digits) for _ in range(size))
 
 def send_email(subject, recipient_list, template_name, context):
     try:
