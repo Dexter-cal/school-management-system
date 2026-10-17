@@ -2520,6 +2520,13 @@ class StudentViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         role = get_role(self.request.user)
 
+        # Unknown or missing roles must never fall through to the unrestricted
+        # student list. Known admin, bursar, and reception roles need the full
+        # list for their school duties; parent, teacher, and student are scoped
+        # below to their own linked records/classes.
+        if role not in {'superadmin', 'bursar', 'reception', 'teacher', 'parent', 'student'} and not is_admin_role(role):
+            return qs.none()
+
         if role == 'parent':
             phone = getattr(getattr(self.request.user, 'profile', None), 'phone_number', None)
             linked_ids = list(StudentGuardianLink.objects.filter(parent_user=self.request.user, is_active=True).values_list('student_id', flat=True))
