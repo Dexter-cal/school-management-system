@@ -42,3 +42,6 @@ jobs:
         working-directory: school-management-system
         run: |
           python manage.py collectstatic --noinput
+
+      - name: Validate frontend JavaScript syntax
+        run: node --check school-management-system/school/static/school/js/app.js
