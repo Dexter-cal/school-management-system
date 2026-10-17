@@ -117,7 +117,7 @@ const API = {
         } catch (err) { 
             // Authentication endpoints can contain passwords, OTPs, and session actions.
             // Never persist those requests in localStorage or replay them later.
-            const isSensitiveAuthRequest = /^\\/auth(?:\\/|$)/i.test(String(url || ''));
+            const isSensitiveAuthRequest = /^\/auth(?:\/|$)/i.test(String(url || ''));
             if (!isSafe && !isFormData && !isSensitiveAuthRequest) { 
                 this._enqueueOffline({ 
                     url, 
