@@ -1,3 +1,0 @@
-INFO "GET / HTTP/1.1" 200 72240
-INFO "GET /admin/login/ HTTP/1.1" 200 4069
-INFO "GET /api/auth/csrf/ HTTP/1.1" 200 80
