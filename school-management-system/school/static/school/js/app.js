@@ -1652,6 +1652,7 @@ function buildSidebar() {
                     return;
                 }
             }
+            if (item.page === 'grading' && !['superadmin', 'director', 'headteacher', 'dos'].includes(role)) return;
             if (item.section) {
                 htmlContent += `<div class="sb-section">${item.section}</div>`;
             } else {
@@ -1677,6 +1678,38 @@ function buildSidebar() {
             }
         } catch {}
     }
+}
+
+
+function ensureChatStyles() {
+    if (document.getElementById('chat-theme-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'chat-theme-styles';
+    style.textContent = `
+      .chat-layout{display:grid!important;grid-template-columns:minmax(250px,320px) minmax(0,1fr);gap:14px;min-height:clamp(480px,72vh,760px)}
+      .chat-layout>.card{min-width:0;overflow:hidden;border:1px solid var(--e);border-radius:var(--rad);box-shadow:var(--shadow)}
+      .chat-layout>.card:first-child{background:var(--white)}
+      .chat-layout>.card:last-child{background:var(--f8)}
+      .chat-layout .card-h{border-bottom:1px solid var(--e);padding:14px 16px!important}
+      .chat-layout .card-b[id="chat-box-body"]{background:linear-gradient(180deg,var(--f8),var(--white));min-height:340px}
+      .chat-layout .ri{border-bottom:1px solid var(--f0);transition:background .15s}
+      .chat-layout .ri:hover{background:var(--f8)!important}
+      .chat-layout input{max-width:100%}
+      .chat-back-btn{display:none;border:0;background:transparent;color:var(--m);font-size:22px;font-weight:800;padding:2px 7px;cursor:pointer}
+      body[data-theme="dark"] .chat-layout>.card:first-child,body[data-theme="dark"] .chat-layout .card-h,body[data-theme="dark"] .chat-layout .card-b[id="chat-box-body"]{background:#161b22!important;border-color:#222a35!important;color:#f2f4f7}
+      body[data-theme="dark"] .chat-layout .ri{border-bottom-color:#222a35}
+      body[data-theme="dark"] .chat-layout .ri:hover{background:#25202a!important}
+      body[data-theme="dark"] .chat-layout .rd,body[data-theme="dark"] .chat-layout .sub{color:#aab2bf}
+      @media(max-width:760px){
+        .chat-layout{display:block!important;min-height:calc(100dvh - 150px)}
+        .chat-layout>.card{min-height:calc(100dvh - 165px)}
+        .chat-layout.thread-open>.card:first-child{display:none}
+        .chat-layout:not(.thread-open)>.card:last-child{display:none}
+        .chat-layout .card-b[id="chat-box-body"]{max-height:none!important;min-height:42vh;padding:14px 10px!important}
+        .chat-back-btn{display:inline-block}
+      }
+    `;
+    document.head.appendChild(style);
 }
 
 async function loadPage(page, el, label) {
@@ -2688,8 +2721,8 @@ async function loadPage(page, el, label) {
             </div></div></div> 
           </div> 
  
-          <div class="modal" id="modal-grading"> 
-            <div class="modal-card" style="max-width:1180px;width:min(1180px,96vw)"> 
+          <div class="modal-overlay" id="modal-grading">
+            <div class="modal" style="max-width:1180px;width:min(1180px,96vw)"> 
               <div class="modal-head"><div style="font-weight:900">Grading Scale</div><button class="x" onclick="closeModal('modal-grading')">X</button></div> 
               <div class="modal-body"> 
                 <input type="hidden" id="g-id" value=""> 
@@ -3542,6 +3575,8 @@ async function loadPage(page, el, label) {
 
         let activeContactId = (contacts[0] && contacts[0].id) ? contacts[0].id : null;
         let searchQuery = '';
+        let mobileThreadOpen = false;
+        ensureChatStyles();
 
         const renderChatPage = (selectedId) => {
             const selectedUser = contacts.find(c => c.id == selectedId) || contacts[0] || { name: 'Chat', id: null };
@@ -3584,7 +3619,7 @@ async function loadPage(page, el, label) {
             main.innerHTML = `
               <div class="page">
                 <div class="ph"><div class="ph-title">Chat & In-App Messaging</div><div class="ph-sub">Direct conversation between teachers, school administrators, and parents</div></div>
-                <div style="display:grid;grid-template-columns:minmax(260px, 320px) 1fr;gap:16px;min-height:560px">
+                <div class="chat-layout ${mobileThreadOpen ? 'thread-open' : ''}">
                   <div class="card" style="display:flex;flex-direction:column">
                     <div class="card-h" style="padding:12px 16px"><div class="card-t">Contacts</div></div>
                     <div style="padding:8px 12px;border-bottom:1px solid var(--f0)">
@@ -3593,7 +3628,7 @@ async function loadPage(page, el, label) {
                     <div class="card-b np" style="flex:1;overflow-y:auto;max-height:480px"><div style="padding:6px 8px">${contactRows}</div></div>
                   </div>
                   <div class="card" style="display:flex;flex-direction:column;background:var(--f8)">
-                    <div class="card-h" style="background:#fff"><div class="card-t" style="display:flex;align-items:center;gap:8px"><div class="av av-sm r" style="font-weight:800">${escapeHtml((selectedUser.name || 'C').substring(0, 2).toUpperCase())}</div><span>${escapeHtml(selectedUser.name || 'Chat')}</span> <span class="bdg g" style="font-size:10px">${escapeHtml(selectedUser.role || 'User')}</span></div></div>
+                    <div class="card-h" style="background:#fff"><div class="card-t" style="display:flex;align-items:center;gap:8px"><button type="button" class="chat-back-btn" onclick="window.backToChatContacts()" aria-label="Back to chats">‹</button><div class="av av-sm r" style="font-weight:800">${escapeHtml((selectedUser.name || 'C').substring(0, 2).toUpperCase())}</div><span>${escapeHtml(selectedUser.name || 'Chat')}</span> <span class="bdg g" style="font-size:10px">${escapeHtml(selectedUser.role || 'User')}</span></div></div>
                     <div class="card-b" id="chat-box-body" style="flex:1;overflow-y:auto;max-height:420px;padding:20px 16px">${msgRows}</div>
                     <div style="padding:10px 16px;background:#fff;border-top:1px solid var(--f0);display:flex;gap:6px;flex-wrap:wrap">
                       <button class="btn btn-xs btn-gh" onclick="window.insertQuickReply('👍 Thank you!')">👍 Thank you</button>
@@ -3625,7 +3660,16 @@ async function loadPage(page, el, label) {
             if (input) { input.value = text; input.focus(); }
         };
 
-        window.switchChatContact = (id) => renderChatPage(id);
+        window.switchChatContact = async (id) => {
+            mobileThreadOpen = true;
+            renderChatPage(id);
+            try {
+                await API.fetch('/chat-messages/mark-read/', { method: 'POST', body: JSON.stringify({ sender_id: id }) });
+                messages.forEach(m => { if (m.sender == id && m.recipient == currentUser.id) m.is_read = true; });
+                if (document.getElementById('chat-box-body')) renderChatPage(id);
+            } catch (e) {}
+        };
+        window.backToChatContacts = () => { mobileThreadOpen = false; renderChatPage(activeContactId); };
         window.sendChatMessage = async (recipientId) => {
             const input = document.getElementById('chat-input-msg');
             const msg = (input ? input.value : '').trim();
@@ -3655,13 +3699,20 @@ async function loadPage(page, el, label) {
             }
             try {
                 const latest = await API.fetch('/chat-messages/').catch(() => []);
-                if (latest && latest.length > messages.length) {
+                const knownIds = new Set(messages.map(m => String(m.id)));
+                if (latest && latest.some(m => !knownIds.has(String(m.id)))) {
                     messages.length = 0;
                     messages.push(...latest);
                     renderChatPage(activeContactId);
+                    if (activeContactId) {
+                        try {
+                            await API.fetch('/chat-messages/mark-read/', { method: 'POST', body: JSON.stringify({ sender_id: activeContactId }) });
+                            messages.forEach(m => { if (m.sender == activeContactId && m.recipient == currentUser.id) m.is_read = true; });
+                        } catch (e) {}
+                    }
                 }
             } catch (e) {}
-        }, 3500);
+        }, 8000);
 
     } else if (page === 'announcements') {
         const role = (currentUser.profile && currentUser.profile.role) || 'admin';
