@@ -11,14 +11,16 @@ from unittest.mock import Mock, patch
 
 from django.apps import apps
 from django.contrib.auth.models import User
-from django.db import connection
+from django.db import connection, OperationalError
 from django.http import HttpResponse
 from django.core.cache import cache
 from django.test import Client, TransactionTestCase
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.response import Response
-from rest_framework.test import APITestCase, APIClient
+from rest_framework.test import APITestCase, APIClient, APIRequestFactory
+
+from .views import ChatMessageViewSet
 
 from .models import (
     APICredential,
@@ -1978,3 +1980,17 @@ class ChatMessageTableRepairMigrationTests(TransactionTestCase):
             ChatMessage._meta.db_table,
             connection.introspection.table_names(),
         )
+
+
+class ChatMessageStorageErrorTests(TransactionTestCase):
+    """The chat API must return a clear service error instead of an HTML 500 page."""
+
+    def test_database_operational_error_returns_actionable_json(self):
+        request = APIRequestFactory().get('/api/chat-messages/')
+        view = ChatMessageViewSet()
+        with patch('rest_framework.views.APIView.dispatch', side_effect=OperationalError('database unavailable')):
+            response = view.dispatch(request)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data['code'], 'chat_storage_unavailable')
+        self.assertIn('Chat is temporarily unavailable', response.data['detail'])
