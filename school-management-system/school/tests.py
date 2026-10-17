@@ -167,6 +167,31 @@ class AuthSecurityTests(BaseSchoolTestCase):
         mock_send_email.assert_called_once()
         mock_send_sms.assert_called_once()
 
+    def test_user_without_role_cannot_list_student_records(self):
+        school_class = SchoolClass.objects.create(
+            level='P.3',
+            sections=['A'],
+            annual_fee=Decimal('100000.00'),
+            max_students_per_section=30,
+        )
+        student = self.create_student(
+            student_id='BJS-2026-SCOPE-1',
+            first_name='Scoped',
+            last_name='Student',
+            school_class=school_class,
+        )
+        unscoped_user = User.objects.create_user(
+            username='unscoped-user',
+            password='StrongPass123!',
+        )
+        self.client.force_authenticate(user=unscoped_user)
+
+        response = self.client.get('/api/students/')
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.data.get('results', response.data) if isinstance(response.data, dict) else response.data
+        self.assertFalse(any(row.get('id') == student.id for row in rows))
+
     def test_password_reset_rejects_weak_new_password(self):
         OTP.objects.create(
             user=self.user,
