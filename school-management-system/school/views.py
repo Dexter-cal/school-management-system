@@ -4883,20 +4883,18 @@ class AuthViewSet(viewsets.ViewSet):
             sent = False
             if user_profile.email_address:
                 try:
-                    send_email(
+                    sent = bool(send_email(
                         subject='Password Reset OTP - Bitende Junior School',
                         recipient_list=[user_profile.email_address],
                         template_name='school/emails/otp_email.html',
                         context={'otp_code': otp_code, 'user_name': user.first_name or user.username}
-                    )
-                    sent = True
+                    ))
                 except Exception:
                     sent = False
             if user_profile.phone_number:
                 try:
                     sms_message = f'Your Bitende Junior School password reset code is {otp_code}. It expires in 15 minutes.'
-                    send_sms(user_profile.phone_number, sms_message)
-                    sent = True
+                    sent = bool(send_sms(user_profile.phone_number, sms_message)) or sent
                 except Exception:
                     pass
             if not sent:
