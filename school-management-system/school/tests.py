@@ -40,6 +40,7 @@ from .models import (
     Payment,
     PrintQueueItem,
     ResultsHoldLog,
+    SecurityAuditLog,
     SchoolClass,
     StaffPayroll,
     Student,
@@ -141,6 +142,26 @@ class AuthSecurityTests(BaseSchoolTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn('If an account exists', response.data['detail'])
+
+    @patch('school.views.send_sms', return_value=False)
+    @patch('school.views.send_email', return_value=False)
+    def test_password_reset_records_delivery_failure(self, mock_send_email, mock_send_sms):
+        response = self.client.post(
+            '/api/auth/request-password-reset/',
+            {'identifier': self.user.profile.email_address},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('If an account exists', response.data['detail'])
+        self.assertTrue(
+            SecurityAuditLog.objects.filter(
+                user=self.user,
+                event_type='OTP_REQUEST_FAILED',
+            ).exists()
+        )
+        mock_send_email.assert_called_once()
+        mock_send_sms.assert_called_once()
 
     def test_password_reset_rejects_weak_new_password(self):
         OTP.objects.create(
