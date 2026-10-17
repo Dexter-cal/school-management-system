@@ -293,17 +293,23 @@ if not DEBUG:
         cast=lambda v: [s.strip() for s in v.split(",") if s.strip()],
     )
 
-# Email settings for password reset (for development, prints to console)
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-
-# For production, uncomment and configure these:
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.example.com'
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_HOST_USER = 'your_email@example.com'
-# EMAIL_HOST_PASSWORD = 'your_email_password'
-# DEFAULT_FROM_EMAIL = 'webmaster@yourdomain.com'
+# Email delivery: use the console only in development. Production uses SMTP
+# unless an explicit backend is configured. SMTP credentials must be supplied
+# through environment variables or the system's configured SMTP API credential.
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND",
+    default=(
+        "django.core.mail.backends.console.EmailBackend"
+        if DEBUG else "django.core.mail.backends.smtp.EmailBackend"
+    ),
+)
+EMAIL_HOST = config("EMAIL_HOST", default="")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+EMAIL_USE_SSL = config("EMAIL_USE_SSL", default=False, cast=bool)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=15, cast=int)
 
 # Twilio Settings (for SMS)
 TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx') # Replace with your Account SID
